@@ -1,1013 +1,529 @@
-# In Parallel MCP Developer Guide
+# Compliance Multi-Agent System
 
-**Endpoint:** `https://www.in-parallel.ai/mcp`  
-**Audience:** Developers building AI assistants, internal copilots, workflow automations, and agentic experiences on top of In Parallel work context.
+A hierarchical multi-agent system that reviews a cosmetics company's meeting decisions against EU regulations (Cosmetics Regulation EC 1223/2009, Cosmetic Claims Regulation EU 655/2013, GDPR), runs the legal team through a two-gate human-in-the-loop review, and produces an auditable compliance report with full evidence chain.
 
-> Note: This guide is drafted as a practical developer-facing reference for the In Parallel MCP direction, based on the latest Marketing and Management meeting context plus the currently exposed In Parallel workspace capabilities. The exact public endpoint behavior, authentication scheme, and tool schemas should be verified against the live MCP server.
-
----
-
-## 1. What the In Parallel MCP does
-
-The In Parallel MCP gives AI clients structured access to organizational execution context.
-
-In practical terms, it lets an AI assistant answer questions and perform workflows around:
-
-- Workspaces
-- Meeting records
-- Meeting summaries
-- Speaker-attributed transcripts
-- Decisions
-- Action items
-- Execution plans
-- Plan version history
-
-The core value is simple:
-
-> In Parallel makes work context usable by AI.
-
-Instead of asking an AI model to guess from generic knowledge, the MCP gives it access to the actual operating context behind a team’s meetings, decisions, commitments, and plans.
+Built with **LangGraph** + **Anthropic Claude Sonnet 4.5**.
 
 ---
 
-## 2. What developers can build with it
+## Table of contents
 
-### 2.1 Meeting intelligence
-
-Build assistants that can answer questions like:
-
-- “What happened in the last Marketing meeting?”
-- “What were the key decisions from the latest Management Weekly?”
-- “Who attended the last Product Leadership meeting?”
-- “Show me the action items created in yesterday’s meeting.”
-- “Summarize the last five meetings for this workspace.”
-- “What did we decide about pricing?”
-
-### 2.2 Decision tracking
-
-Build decision-aware workflows:
-
-- List decisions by workspace.
-- Retrieve full decision context.
-- Identify who made or owned a decision.
-- Trace a decision back to the meeting where it originated.
-- Compare current decisions with older execution-plan versions.
-- Surface unresolved, proposed, approved, or rejected decisions.
-
-### 2.3 Action-item automation
-
-Build execution workflows:
-
-- List pending, assigned, in-progress, completed, cancelled, or archived action items.
-- Retrieve a specific action item with its source context.
-- Create new action items from a meeting.
-- Update owners, statuses, summaries, and due dates.
-- Close an action item with a resolution note.
-- Build daily or weekly follow-up agents.
-
-### 2.4 Execution-plan copilots
-
-Build plan-aware assistants:
-
-- Retrieve the current execution plan for a workspace.
-- Show how the plan has changed over time.
-- Explain why a plan shifted based on meeting decisions.
-- Generate next-meeting checklists.
-- Create weekly execution status summaries.
-- Help teams prepare for leadership reviews.
-
-### 2.5 Onboarding and context recovery
-
-Build “catch me up” experiences:
-
-- “Catch me up on this workspace.”
-- “What are the open risks?”
-- “What decisions led to this plan?”
-- “What did I miss while I was away?”
-- “What is the current state of the Marketing launch plan?”
-- “What are the next commitments before the next meeting?”
-
-### 2.6 Sales, customer, and leadership workflows
-
-Build role-specific copilots:
-
-- Sales: summarize account meetings and next steps.
-- Customer success: identify customer commitments and unresolved follow-ups.
-- Product: track feature decisions and delivery ownership.
-- Leadership: summarize cross-functional execution risks.
-- Operations: monitor overdue commitments and plan drift.
+1. [Quick start](#1-quick-start)
+2. [What it does](#2-what-it-does)
+3. [Architecture](#3-architecture)
+4. [Folder structure](#4-folder-structure)
+5. [How data flows through the graph](#5-how-data-flows-through-the-graph)
+6. [The three agents](#6-the-three-agents)
+7. [Two human-in-the-loop gates](#7-two-human-in-the-loop-gates)
+8. [Evidence chain and severity scoring](#8-evidence-chain-and-severity-scoring)
+9. [Policy dictionaries](#9-policy-dictionaries)
+10. [Company database (fake)](#10-company-database-fake)
+11. [Meeting scenarios](#11-meeting-scenarios)
+12. [Running and debugging](#12-running-and-debugging)
+13. [Extending the system](#13-extending-the-system)
 
 ---
 
-## 3. MCP concept overview
+## 1. Quick start
 
-MCP, or Model Context Protocol, is a standard way for AI clients to connect to external tools and context sources.
+```bash
+# 1. Set up the Python environment
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 
-An MCP setup usually has three parts:
+# 2. Configure your API key
+cp .env.example .env
+# Edit .env and set ANTHROPIC_API_KEY=...
 
-1. **MCP host**  
-   The AI application, such as an assistant, IDE, agent platform, or internal app.
+# 3. Run the demo (default: meeting-glow-001)
+python run_multi_agent_demo.py
 
-2. **MCP client**  
-   The component inside the host that communicates with the MCP server.
+# Or pick the wider-coverage meeting
+python run_multi_agent_demo.py meeting-glow-002
 
-3. **MCP server**  
-   The service that exposes tools, resources, and prompts to the AI client.
-
-For In Parallel, the MCP server is the interface that exposes work context and execution workflows.
-
----
-
-## 4. Transport and connection model
-
-The In Parallel endpoint is expected to behave like a remote MCP server:
-
-```text
-https://www.in-parallel.ai/mcp
+# Verbose diagnostics (prints what each agent returned)
+COMPLIANCE_DEBUG=1 python run_multi_agent_demo.py meeting-glow-002
 ```
 
-Modern remote MCP servers typically use **Streamable HTTP**. MCP also supports local `stdio` servers, but a hosted endpoint like this is normally connected over HTTP.
+You will be prompted twice during the run:
 
-A typical MCP client configuration points to the endpoint and, depending on the client, includes either OAuth or a bearer token.
+1. **Gate 1** — confirm each potential finding `[y/N]`
+2. **Gate 2** — approve / edit / reject each proposed solution `[a/e/r]`
+
+The final report is printed to the terminal and saved to `reports/compliance_report.json`.
 
 ---
 
-## 5. Authentication
+## 2. What it does
 
-The live authentication method should be verified against the In Parallel MCP server.
+You hand it a meeting id. The system:
 
-Recommended supported options:
+1. **Inspects the meeting** for decisions that violate EU regulations.
+2. **Pauses** so the legal team can confirm which findings are real legal issues.
+3. **Researches** each confirmed issue against the company's historical knowledge base (past cases, internal policies, external legal opinions) to draft remediation proposals backed by precedent.
+4. **Pauses again** so the legal team can approve, edit, or reject each proposed solution.
+5. **Identifies** which internal departments need to be notified, drafts a notification message for each, and a cross-functional follow-up meeting agenda.
+6. **Compiles** a final structured report — JSON for machine consumption, plain text for humans — sorted by severity with full evidence chain.
 
-### 5.1 OAuth
+The legal team makes legal judgments. The agents do the research and drafting.
 
-Best for end-user clients such as ChatGPT, Claude, Cursor, or other MCP-aware tools where users connect their own In Parallel account.
+---
 
-Expected behavior:
+## 3. Architecture
 
-1. User adds the In Parallel MCP connector.
-2. Client opens an OAuth authorization flow.
-3. User authorizes access.
-4. MCP client receives access and can call tools according to user permissions.
-
-### 5.2 Bearer token
-
-Best for server-side applications, automation, and internal tools.
-
-Example header:
-
-```http
-Authorization: Bearer YOUR_IN_PARALLEL_API_KEY
+```
+                        ┌────────────────────────┐
+                        │       START            │
+                        └───────────┬────────────┘
+                                    ▼
+                  ┌────────────────────────────────────┐
+                  │  compliance_analyst   (ReAct LLM)  │
+                  │  tools: get_meeting_decisions,     │
+                  │         get_transcript_excerpt,    │
+                  │         lookup_regulation,         │
+                  │         list_all_regulations       │
+                  └────────────────┬───────────────────┘
+                                   ▼
+                  ╔════════════════════════════════════╗
+                  ║  HITL GATE 1                       ║
+                  ║  legal team confirms findings      ║
+                  ╚════════════════┬═══════════════════╝
+                                   ▼
+                  ┌────────────────────────────────────┐
+                  │  legal_researcher    (ReAct LLM)   │
+                  │  tools: search_past_cases,         │
+                  │         search_internal_policies,  │
+                  │         search_legal_opinions,     │
+                  │         get_document_by_id         │
+                  └────────────────┬───────────────────┘
+                                   ▼
+                  ╔════════════════════════════════════╗
+                  ║  HITL GATE 2                       ║
+                  ║  legal team approves solutions     ║
+                  ╚════════════════┬═══════════════════╝
+                                   ▼
+                  ┌────────────────────────────────────┐
+                  │  notifier            (ReAct LLM)   │
+                  │  tools: list_departments,          │
+                  │         find_departments_for_topics│
+                  └────────────────┬───────────────────┘
+                                   ▼
+                  ┌────────────────────────────────────┐
+                  │  report_generator   (deterministic)│
+                  │  compiles JSON + text report       │
+                  └────────────────┬───────────────────┘
+                                   ▼
+                        ┌────────────────────────┐
+                        │        END             │
+                        └────────────────────────┘
 ```
 
-### 5.3 Permission model
+### Why this shape?
 
-The MCP should respect the authenticated user’s workspace access. A user should only be able to see meetings, decisions, plans, and action items they are authorized to access in In Parallel.
+- **Hierarchical, not flat** — each agent has a single, narrow responsibility. A flat ReAct agent with all 10 tools would get distracted; specialised agents stay focused.
+- **Two HITL gates, not one** — legal judgement happens at two distinct points: *"is this actually a legal issue?"* and *"is this proposed solution acceptable?"*. Bundling them is impossible because the second question depends on research that hasn't happened yet at the first gate.
+- **Autonomous tool-using legal research, not RAG** — pulling one set of similar documents isn't enough. The legal researcher genuinely does multi-step reasoning: search past cases → cross-reference with internal policies → check what external counsel said. That's a tool-using agent, not a one-shot retrieval.
+- **Deterministic report generator** — the final compilation step is plain Python. No LLM is needed to assemble structured output from already-structured pieces; an LLM there would only add hallucination risk.
 
 ---
 
-## 6. Example MCP client configurations
+## 4. Folder structure
 
-These examples assume a remote HTTP MCP server. Exact support varies by client.
+```
+InParallel/
+├── README.md                       ← this file
+├── requirements.txt
+├── .env.example                    ← copy to .env, fill in API key
+├── run_multi_agent_demo.py         ← interactive CLI entry point
+│
+├── multi_agent/                    ← main package
+│   ├── __init__.py                 ← public API: build_compliance_graph, ...
+│   ├── config.py                   ← env loading, model name, recursion limits
+│   ├── state.py                    ← ComplianceState TypedDict (the contract)
+│   ├── schemas.py                  ← Finding / Solution / Notification dataclasses
+│   ├── graph.py                    ← StateGraph wiring + interrupts + checkpointer
+│   │
+│   ├── agents/                     ← LLM-backed ReAct agents (one file each)
+│   │   ├── compliance_analyst.py
+│   │   ├── legal_researcher.py
+│   │   └── notifier.py
+│   │
+│   ├── nodes/                      ← deterministic graph nodes (no LLM)
+│   │   ├── human_review.py         ← HITL gate CLI prompts
+│   │   └── report_generator.py     ← final JSON + text compilation
+│   │
+│   ├── tools/                      ← agent tools, grouped by consumer
+│   │   ├── compliance_tools.py     ← 4 tools for the analyst
+│   │   ├── legal_tools.py          ← 4 tools for the researcher
+│   │   └── notification_tools.py   ← 2 tools for the notifier
+│   │
+│   ├── prompts/                    ← system prompts as editable .md files
+│   │   ├── compliance_analyst.md
+│   │   ├── legal_researcher.md
+│   │   └── notifier.md
+│   │
+│   ├── policies/                   ← EU regulation dictionaries (24 articles)
+│   │   ├── eu_cosmetics.py         ← EC 1223/2009 (9 articles)
+│   │   ├── claims_regulation.py    ← EU 655/2013 (7 criteria)
+│   │   └── gdpr.py                 ← GDPR (8 articles)
+│   │
+│   └── data/                       ← fake/seed data (swap for real DB)
+│       ├── meetings.py             ← 2 meeting fixtures, 17 decisions total
+│       └── company_database.py     ← past cases, policies, opinions, dept directory
+│
+└── reports/                        ← generated JSON reports (gitignored)
+    └── compliance_report.json
+```
 
-### 6.1 Cursor
+### Why this layout
 
-Add this to `~/.cursor/mcp.json` or a project-level `.cursor/mcp.json`:
+| Folder | Purpose | Why separate |
+|---|---|---|
+| `state.py` | The TypedDict that flows between every node | LangGraph convention — isolating state makes data flow explicit |
+| `schemas.py` | Typed records (`Finding`, `Solution`, `Notification`) | IDE autocomplete + stable shapes instead of raw dicts |
+| `graph.py` | Only node wiring | A new contributor reads ONE file to understand the topology |
+| `agents/` (one file each) | Easy to add / remove an agent | No giant "agents.py" to scroll through |
+| `nodes/` separate from `agents/` | Splits LLM nodes from deterministic ones | `report_generator` doesn't need an LLM — mixing them would confuse readers |
+| `tools/` grouped by agent | `from multi_agent.tools import legal_tools` is self-documenting | Tells you which agent uses which tools at a glance |
+| `prompts/` as `.md` files | Non-engineers (legal SMEs) can edit prompts | Prompt iteration shouldn't require Python edits |
+| `policies/` registry | `ALL_REGULATIONS` exposed via one import | One place to add a new regulation |
+| `data/` isolated | All mock data lives here | Swapping to a real DB means replacing this folder, nothing else |
+
+### Reading order for a new contributor
+
+1. This README
+2. `multi_agent/state.py` — what data flows
+3. `multi_agent/graph.py` — how nodes connect
+4. `multi_agent/agents/compliance_analyst.py` — example agent pattern
+5. `multi_agent/policies/eu_cosmetics.py` — example policy dict
+6. `run_multi_agent_demo.py` — how it's invoked
+
+---
+
+## 5. How data flows through the graph
+
+The single `ComplianceState` TypedDict is the contract between all nodes. Each node populates only the keys it owns.
+
+```python
+class ComplianceState(TypedDict, total=False):
+    messages: list[BaseMessage]          # accumulated chat history
+
+    # Input
+    meeting_id: str                      # set by the caller
+
+    # Set by compliance_analyst
+    potential_findings: list[dict]
+
+    # Set by HITL Gate 1
+    confirmed_findings: list[dict]
+    gate1_complete: bool
+
+    # Set by legal_researcher
+    proposed_solutions: list[dict]
+
+    # Set by HITL Gate 2
+    approved_solutions: list[dict]
+    gate2_complete: bool
+
+    # Set by notifier
+    department_notifications: list[dict]
+    meeting_agenda: dict
+
+    # Set by report_generator
+    final_report: dict
+```
+
+Inspect the live state at any point: `graph.get_state(config).values`.
+
+A `MemorySaver` checkpointer is attached to the graph — this is what lets the graph **pause at the `interrupt_before` gates and resume across user turns**. Without a checkpointer, interrupts don't work.
+
+---
+
+## 6. The three agents
+
+All three are LangGraph **ReAct agents** built with `langgraph.prebuilt.create_react_agent`. Each runs an inner Reason → Act → Observe loop until it emits its final structured JSON.
+
+### Compliance Analyst
+
+**File:** `multi_agent/agents/compliance_analyst.py`  
+**Prompt:** `multi_agent/prompts/compliance_analyst.md`
+
+**Job:** Find decisions in the meeting that violate EU regulations.
+
+**Tools:**
+| Tool | What it does |
+|---|---|
+| `get_meeting_decisions(meeting_id)` | List the meeting's decisions |
+| `get_transcript_excerpt(meeting_id, keyword)` | Read the (optionally filtered) transcript |
+| `list_all_regulations()` | Compact catalogue of all 24 regulation articles |
+| `lookup_regulation(regulation_id)` | Full text of one article |
+
+**Output:** `{"findings": [{decision_id, summary, transcript_quote, transcript_speaker, regulation_id}]}`
+
+**Workflow:** decisions → transcript → regulation catalogue → per-decision `lookup_regulation` → JSON findings.
+
+### Legal Researcher
+
+**File:** `multi_agent/agents/legal_researcher.py`  
+**Prompt:** `multi_agent/prompts/legal_researcher.md`
+
+**Job:** For each confirmed finding, draft a remediation backed by company precedent.
+
+**Tools:**
+| Tool | What it does |
+|---|---|
+| `search_past_cases(query)` | Prior incidents with resolution notes |
+| `search_internal_policies(query)` | Company SOPs |
+| `search_legal_opinions(query)` | External counsel opinions |
+| `get_document_by_id(doc_id)` | Fetch one document's full text |
+
+**Output:** `{"solutions": [{finding_id, proposal, cited_doc_ids, rationale}]}`
+
+**Enforcement:** Every solution MUST cite ≥1 document id. Solutions without citations are dropped at the graph-node boundary.
+
+### Notifier
+
+**File:** `multi_agent/agents/notifier.py`  
+**Prompt:** `multi_agent/prompts/notifier.md`
+
+**Job:** Identify affected departments, draft notifications, draft a follow-up meeting agenda.
+
+**Tools:**
+| Tool | What it does |
+|---|---|
+| `list_departments()` | Full department directory (7 depts) |
+| `find_departments_for_topics(topics)` | Match keyword topics to departments |
+
+**Output:** `{"notifications": [{department_id, subject, body, related_finding_ids}], "meeting_agenda": {title, attendees, items}}`
+
+---
+
+## 7. Two human-in-the-loop gates
+
+LangGraph's `interrupt_before=["legal_researcher", "notifier"]` pauses the graph **before** those nodes run. The CLI handler reads the pending state, prompts the user, injects the user's decisions via `graph.update_state(...)`, then resumes with `graph.invoke(Command(resume=True), ...)`.
+
+### Gate 1 — Confirm findings
+
+For each potential finding (sorted Critical → Low), the user sees:
+- the verbatim transcript quote and speaker
+- the regulation article and severity
+- the max fine
+- the responsible department
+
+…and answers `[y/N]`. Only confirmed findings flow downstream.
+
+### Gate 2 — Approve solutions
+
+For each proposed solution, the user sees:
+- the proposal text
+- the cited company-database document ids (evidence)
+- the rationale
+
+…and answers `[a]pprove / [e]dit / [r]eject`. Edited solutions store the user's replacement text under `user_edited_proposal` so the audit trail records human modifications. Rejected solutions are dropped.
+
+Implementation: `multi_agent/nodes/human_review.py`.
+
+---
+
+## 8. Evidence chain and severity scoring
+
+### Evidence chain (enforced)
+
+Every finding in the final report carries **three linked elements**:
+
+```
+transcript_quote  →  regulation_reference  →  precedent_doc_ids
+(who said what)      (which law it breaks)    (company history)
+```
+
+System prompts require all three. The graph nodes enforce defensively:
+
+| Guard | Where | What happens |
+|---|---|---|
+| `regulation_id` not in policy library | `graph.py::_enrich_finding` | Finding **dropped** |
+| `cited_doc_ids` empty | `graph.py::_solution_from_raw` | Solution **dropped** |
+
+So even if the LLM hallucinates, the report stays clean.
+
+### Severity scoring
+
+Each regulation article carries `severity` and `max_fine`. Findings inherit from the article they violate. The report sorts Critical → Low.
+
+| Severity | Examples | Max fine |
+|---|---|---|
+| **Critical** | GDPR Art 9 (health data), Art 44–49 (intl transfer), Cosmetics Art 10 (safety), Art 14 (restricted substances) | EUR 20M or 4% turnover / product withdrawal |
+| **High** | Cosmetics Art 18 (animal testing), Art 8 (GMP), GDPR Art 6/7 | National authority fines + market action |
+| **Medium** | Cosmetics Art 13 (CPNP), Claims criteria 1/4, GDPR Art 25/35 | National authority fines |
+| **Low** | Labelling (Art 19), claims criteria 5/6 | Warning letters |
+
+---
+
+## 9. Policy dictionaries
+
+24 regulation articles across three modules, all keyed by stable id:
+
+| Module | File | Articles |
+|---|---|---|
+| EU Cosmetics Regulation EC 1223/2009 | `policies/eu_cosmetics.py` | Art 3, 8, 10, 11, 13, 14, 18, 19, 20 |
+| EU Claims Regulation 655/2013 | `policies/claims_regulation.py` | 6 common criteria + cruelty-free guidance |
+| GDPR EU 2016/679 | `policies/gdpr.py` | Art 6, 7, 9, 13, 25, 28, 35, 44–49 |
+
+Every article follows the same dict schema:
+
+```python
+{
+    "id": "GDPR-ART9",                          # stable unique key
+    "regulation": "GDPR (EU 2016/679)",
+    "article": "Article 9",
+    "title": "Special Categories of Personal Data",
+    "requirements": "<plain-English summary>",
+    "violation_indicators": ["health data", "skin photos", "biometric", ...],
+    "severity": "Critical",
+    "max_fine": "Up to EUR 20M or 4% global annual turnover (Art 83(5))",
+    "responsible_department": "Data Protection Office / R&D / Digital",
+}
+```
+
+`violation_indicators` is a keyword list the LLM uses for matching. `policies/__init__.py` exposes `ALL_REGULATIONS` (dict by id) and `get_regulation(id)`.
+
+---
+
+## 10. Company database (fake)
+
+`multi_agent/data/company_database.py` — four in-memory collections:
+
+| Collection | Count | Key fields |
+|---|---|---|
+| `PAST_CASES` | 5 | summary, outcome, **resolution_notes**, regulation_ids, tags |
+| `INTERNAL_POLICIES` | 5 | summary, version, owner_department, regulation_ids |
+| `LEGAL_OPINIONS` | 4 | summary, **recommended_actions**, author, regulation_ids |
+| `DEPARTMENT_DIRECTORY` | 7 | name, lead, email, owns_topics |
+
+Search uses simple case-insensitive keyword matching. **Not vector RAG** — keeps the demo self-contained. To go to production, swap this module for a vector store; nothing else changes.
+
+---
+
+## 11. Meeting scenarios
+
+Two fake meetings in `multi_agent/data/meetings.py`:
+
+### `meeting-glow-001` — 7 decisions (default)
+
+Glow Sérum product launch go/no-go review.
+
+| Decision | Regulation | Severity |
+|---|---|---|
+| "Clinically proven 80% wrinkle reduction" | Claims Crit 3 / Cosmetics Art 20 | High |
+| New peptide, no safety assessment | Cosmetics Art 10 | Critical |
+| "100% Natural & Organic" without certification | Claims Crit 2 | Medium |
+| Skin photos + health questionnaire | GDPR Art 9, Art 35 | Critical |
+| Share data with US analytics firm | GDPR Art 44–49, Art 28 | Critical |
+| "Cruelty-Free" but supplier animal-tested | Cosmetics Art 18 | High |
+| Skip CPNP re-notification | Cosmetics Art 13 | Medium |
+
+### `meeting-glow-002` — 10 decisions (wide coverage)
+
+Production & go-to-market readiness. Exercises **every regulation article**, **all DB collections**, and **all 7 departments**.
+
+| Decision | Regulation | Severity |
+|---|---|---|
+| Manufacture at unaudited facility | Cosmetics Art 8 (GMP) | High |
+| MIT preservative in leave-on product | Cosmetics Art 14 (restricted) | Critical |
+| Incomplete PIF | Cosmetics Art 11 | Medium |
+| Missing INCI / batch / PAO on packaging | Cosmetics Art 19 | Low |
+| "Only sérum that works" | Claims Criterion 4 (honesty) | Medium |
+| Denigrating competitors | Claims Criterion 5 (fairness) | Low |
+| Pre-ticked bundled consent | GDPR Art 7 | High |
+| "Collect everything, decide later" | GDPR Art 25 (by design) | Medium |
+| No lawful basis for skin scans | GDPR Art 6 | High |
+| Delay privacy notice update | GDPR Art 13 | Medium |
+
+```bash
+python run_multi_agent_demo.py meeting-glow-002
+```
+
+---
+
+## 12. Running and debugging
+
+### Normal run
+
+```bash
+python run_multi_agent_demo.py                      # meeting-glow-001
+python run_multi_agent_demo.py meeting-glow-002     # wider coverage
+```
+
+### Verbose diagnostics
+
+```bash
+COMPLIANCE_DEBUG=1 python run_multi_agent_demo.py meeting-glow-002
+```
+
+Prints: raw final LLM message from each agent, parsed keys, message count. Use this when findings or solutions are unexpectedly empty.
+
+### Common issues
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `GraphRecursionError` | Inner-agent recursion limit too low | Increase `INNER_AGENT_RECURSION_LIMIT` in `config.py` |
+| 0 findings on a meeting that should flag issues | Agent emitted free text instead of JSON, or JSON truncated | `COMPLIANCE_DEBUG=1` and inspect the last message |
+| `RuntimeError: ANTHROPIC_API_KEY is not set` | `.env` missing or key empty | Check `.env` exists at project root |
+| Solution dropped from report | `cited_doc_ids` was empty (evidence-chain enforcement) | Check `COMPLIANCE_DEBUG` output |
+
+### Output format
+
+Saved to `reports/compliance_report.json`:
 
 ```json
 {
-  "mcpServers": {
-    "In Parallel MCP": {
-      "url": "https://www.in-parallel.ai/mcp"
+  "generated_at": "2026-05-22T13:45:00+00:00",
+  "meeting_id": "meeting-glow-002",
+  "summary": {
+    "total_findings": 10,
+    "by_severity": {"Critical": 1, "High": 4, "Medium": 4, "Low": 1},
+    "total_solutions": 9,
+    "total_notifications": 6
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "severity": "Critical",
+      "evidence_chain": {
+        "transcript_quote": "...",
+        "regulation": {"id": "...", "article": "...", "title": "..."},
+        "precedent_doc_ids": ["case-2024-001", "POL-DPO-001"]
+      },
+      "approved_solutions": [{"proposal": "...", "cited_doc_ids": [...]}]
     }
-  }
-}
-```
-
-With bearer-token authentication via a local proxy such as `mcp-remote`:
-
-```json
-{
-  "mcpServers": {
-    "In Parallel MCP": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "https://www.in-parallel.ai/mcp",
-        "--header",
-        "authorization: Bearer YOUR_IN_PARALLEL_API_KEY"
-      ]
-    }
-  }
-}
-```
-
-### 6.2 VS Code
-
-Workspace-level `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "In Parallel MCP": {
-      "type": "http",
-      "url": "https://www.in-parallel.ai/mcp"
-    }
-  }
-}
-```
-
-### 6.3 Claude Desktop / Claude.ai
-
-Use custom connector settings where available:
-
-```text
-Name: In Parallel MCP
-URL: https://www.in-parallel.ai/mcp
-Authentication: OAuth
-```
-
-If OAuth is unavailable, use a local proxy pattern:
-
-```json
-{
-  "mcpServers": {
-    "In Parallel MCP": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "https://www.in-parallel.ai/mcp",
-        "--header",
-        "authorization: Bearer YOUR_IN_PARALLEL_API_KEY"
-      ]
-    }
-  }
-}
-```
-
-### 6.4 Cline
-
-```json
-{
-  "mcpServers": {
-    "In Parallel MCP": {
-      "url": "https://www.in-parallel.ai/mcp",
-      "type": "streamableHttp"
-    }
-  }
-}
-```
-
-### 6.5 Windsurf
-
-```json
-{
-  "mcpServers": {
-    "In Parallel MCP": {
-      "serverUrl": "https://www.in-parallel.ai/mcp"
-    }
-  }
-}
-```
-
-### 6.6 Generic HTTP MCP client
-
-```json
-{
-  "name": "In Parallel MCP",
-  "type": "http",
-  "url": "https://www.in-parallel.ai/mcp",
-  "headers": {
-    "Authorization": "Bearer YOUR_IN_PARALLEL_API_KEY"
-  }
+  ],
+  "notifications": [...],
+  "meeting_agenda": {"title": "...", "suggested_attendees": [...], "agenda_items": [...]}
 }
 ```
 
 ---
 
-## 7. Tool reference
+## 13. Extending the system
 
-The following tool set reflects the current In Parallel execution-context capabilities available through the connected environment.
+### Add a new regulation article
 
-### 7.1 `list_workspaces`
+1. Append a new entry to the appropriate file in `multi_agent/policies/`, following the standard schema.
+2. Done. The analyst picks it up via `list_all_regulations()`.
 
-Lists all workspaces accessible to the authenticated user.
+### Add a new agent
 
-**Use when:** The assistant needs to identify the workspace before retrieving meetings, decisions, action items, or plans.
+1. Write a prompt in `multi_agent/prompts/<name>.md`.
+2. Build a tool group in `multi_agent/tools/<name>_tools.py`.
+3. Create a builder in `multi_agent/agents/<name>.py`.
+4. Add a node function and edge in `multi_agent/graph.py`.
 
-**Example user requests:**
+### Swap fake data for a real database
 
-- “Show my In Parallel workspaces.”
-- “Which teams can I access?”
-- “Find the Marketing workspace.”
+Replace `multi_agent/data/` with a real adapter exposing the same function signatures (`list_decisions`, `search_past_cases`, etc.). Nothing else changes.
 
-**Returns:**
+### Roadmap (v2 — not implemented)
 
-- Workspace ID
-- Workspace name
-- Workspace category
-- Owner, when available
-- Parent workspace, when available
-
----
-
-### 7.2 `list_meeting_records`
-
-Lists recent meetings for a workspace, ordered newest first.
-
-**Use when:** The assistant needs to find the latest meeting or browse recent meeting history.
-
-**Inputs:**
-
-- `workspace_id`
-- Optional `page_cursor`
-
-**Example user requests:**
-
-- “What was our last Marketing meeting?”
-- “Show recent meetings for Management Team.”
-- “Find the latest Product Leadership meeting.”
-
-**Returns:**
-
-- Meeting ID
-- Topic
-- Platform
-- Start and end time
-- Organizer, when available
-- Workspace name
-
----
-
-### 7.3 `get_meeting_record`
-
-Retrieves the complete structured record for a meeting.
-
-**Use when:** The assistant needs the richest meeting view, including summary, decisions, action items, and attendees.
-
-**Inputs:**
-
-- `meeting_id`
-
-**Example user requests:**
-
-- “Summarize the last Marketing meeting.”
-- “What action items came out of this meeting?”
-- “What decisions were made in the last Management Weekly?”
-
-**Returns:**
-
-- Meeting topic
-- Platform
-- Start and end time
-- AI-generated summary
-- Attendees
-- Decisions
-- Action items
-- Workspace name
-
----
-
-### 7.4 `get_transcript`
-
-Retrieves the speaker-attributed transcript for a meeting.
-
-**Use when:** The assistant needs exact wording, speaker attribution, or detailed conversation context.
-
-**Inputs:**
-
-- `meeting_id`
-
-**Example user requests:**
-
-- “What exactly did Kristian say about MCP?”
-- “Show the transcript for the last Marketing meeting.”
-- “Find the part where pricing was discussed.”
-
-**Returns:**
-
-- Timestamped transcript
-- Speaker-attributed conversation
-
-**Guidance:** Prefer `get_meeting_record` for summaries and structured outputs. Use `get_transcript` when exact wording matters.
-
----
-
-### 7.5 `list_decisions`
-
-Lists decisions within a workspace.
-
-**Use when:** The assistant needs to review what has been decided, proposed, approved, rejected, or is under review.
-
-**Inputs:**
-
-- `workspace_id`
-- Optional `status`
-- Optional `page_cursor`
-
-**Supported statuses:**
-
-- `proposed`
-- `reviewing`
-- `approved`
-- `rejected`
-
-**Example user requests:**
-
-- “What decisions have we made in Marketing?”
-- “Show proposed decisions in Product.”
-- “What was decided about pricing?”
-
----
-
-### 7.6 `get_decision`
-
-Retrieves the full details of a specific decision.
-
-**Use when:** The assistant needs rationale, context, origin, or owner information for a decision.
-
-**Inputs:**
-
-- `decision_id`
-
-**Example user requests:**
-
-- “Give me the context behind this decision.”
-- “Who decided this and why?”
-- “Which meeting did this decision come from?”
-
----
-
-### 7.7 `list_action_items`
-
-Lists action items within a workspace.
-
-**Use when:** The assistant needs to show tasks, open work, due dates, or owner assignments.
-
-**Inputs:**
-
-- `workspace_id`
-- Optional `status`
-- Optional `start_date`
-- Optional `end_date`
-- Optional `page_cursor`
-
-**Supported statuses:**
-
-- `backlog`
-- `assigned`
-- `in_progress`
-- `done`
-- `archived`
-- `cancelled`
-
-**Example user requests:**
-
-- “What are my open action items?”
-- “What is overdue in Marketing?”
-- “Show in-progress tasks for Management Team.”
-- “What is due this week?”
-
----
-
-### 7.8 `get_action_item`
-
-Retrieves the full details and context of an action item.
-
-**Use when:** The assistant needs to drill into a specific task.
-
-**Inputs:**
-
-- `action_item_id`
-
-**Example user requests:**
-
-- “What is this action item about?”
-- “Where did this task come from?”
-- “Who owns this and when is it due?”
-
----
-
-### 7.9 `create_action_item`
-
-Creates a new action item in a workspace, linked to a source meeting.
-
-**Use when:** A meeting produced a concrete task that should be tracked.
-
-**Inputs:**
-
-- `workspace_id`
-- `source_meeting_id`
-- `title`
-- Optional `summary`
-- Optional `owner_email`
-- Optional `due_date`
-- Optional `status`
-
-**Example user requests:**
-
-- “Create an action item for Sami to draft the MCP launch post.”
-- “Add a task from this meeting to restore analytics.”
-- “Assign Kristian to follow up on WhySummit feedback.”
-
-**Important:** Every action item should trace back to a source meeting.
-
----
-
-### 7.10 `update_action_item`
-
-Updates an existing action item.
-
-**Use when:** Work has started, ownership changes, scope changes, or a due date moves.
-
-**Inputs:**
-
-- `action_item_id`
-- Optional `title`
-- Optional `summary`
-- Optional `owner_email`
-- Optional `due_date`
-- Optional `status`
-
-**Example user requests:**
-
-- “Move this task to in progress.”
-- “Reassign this to Barbara.”
-- “Change the due date to next Friday.”
-- “Update the description with the latest context.”
-
----
-
-### 7.11 `close_action_item`
-
-Marks an action item as done and adds a processed timestamp.
-
-**Use when:** Work is complete.
-
-**Inputs:**
-
-- `action_item_id`
-- Optional `resolution`
-
-**Example user requests:**
-
-- “Close this action item.”
-- “Mark the analytics task as done.”
-- “Close it with the note: GA tag restored and verified.”
-
----
-
-### 7.12 `get_execution_plan`
-
-Retrieves the current execution plan for a workspace.
-
-**Use when:** The assistant needs the living roadmap or operating plan for a workspace.
-
-**Inputs:**
-
-- `workspace_id`
-
-**Example user requests:**
-
-- “What is the current Marketing plan?”
-- “Show the execution plan for Product.”
-- “What are we working toward in this workspace?”
-
-**Returns:**
-
-- Plan title
-- Workspace
-- Last updated time
-- Plan content, when available
-
----
-
-### 7.13 `get_plan_versions`
-
-Retrieves version history for a workspace’s execution plan.
-
-**Use when:** The assistant needs to explain how the plan has changed over time.
-
-**Inputs:**
-
-- `workspace_id`
-
-**Example user requests:**
-
-- “How has the Marketing plan changed?”
-- “What changed after the latest Management meeting?”
-- “Show earlier versions of this plan.”
-
----
-
-## 8. Recommended agent behavior
-
-### 8.1 Start with workspace resolution
-
-When a user asks about a team, project, or recurring meeting:
-
-1. Call `list_workspaces`.
-2. Match the user’s phrase to a workspace name.
-3. If there are multiple likely matches, ask a short clarification.
-4. Use the selected `workspace_id` for subsequent calls.
-
-### 8.2 Prefer structured meeting records before transcripts
-
-Use `get_meeting_record` first for:
-
-- Summaries
-- Action items
-- Decisions
-- Attendees
-- Next steps
-
-Use `get_transcript` only when:
-
-- The user asks who said what.
-- Exact language matters.
-- The summary does not contain enough detail.
-
-### 8.3 Preserve traceability
-
-When generating answers from In Parallel data, include:
-
-- Workspace name
-- Meeting title
-- Meeting date
-- Decision or action item owner
-- Due date, when available
-- Source meeting, when relevant
-
-### 8.4 Avoid over-fetching
-
-For common requests:
-
-- Latest meeting summary: `list_meeting_records` → `get_meeting_record`
-- Open tasks: `list_action_items`
-- Decision detail: `list_decisions` → `get_decision`
-- Plan status: `get_execution_plan`
-- What changed: `get_plan_versions`
-
----
-
-## 9. Common workflows
-
-### 9.1 “What happened in the last Marketing meeting?”
-
-1. `list_workspaces`
-2. Identify `Marketing`.
-3. `list_meeting_records(workspace_id="marketing-weekly")`
-4. Select the newest meeting.
-5. `get_meeting_record(meeting_id)`
-6. Return summary, decisions, and action items.
-
-### 9.2 “Create follow-up tasks from this meeting”
-
-1. `get_meeting_record(meeting_id)`
-2. Identify missing or explicit tasks.
-3. Confirm owner and due date if missing.
-4. `create_action_item(...)`
-5. Return the created task list.
-
-### 9.3 “What changed in the plan?”
-
-1. `get_execution_plan(workspace_id)`
-2. `get_plan_versions(workspace_id)`
-3. Compare current and previous versions.
-4. Summarize changes and likely drivers.
-5. Link changes back to decisions or meetings when possible.
-
-### 9.4 “Prepare me for the next meeting”
-
-1. `list_meeting_records(workspace_id)`
-2. `get_meeting_record(latest_meeting_id)`
-3. `list_action_items(workspace_id, status="assigned")`
-4. `list_decisions(workspace_id)`
-5. Return:
-   - Open items
-   - Recent decisions
-   - Risks
-   - Suggested agenda
-   - Follow-up checklist
-
-### 9.5 “What should I follow up on this week?”
-
-1. `list_workspaces`
-2. For relevant workspace(s), call `list_action_items`.
-3. Filter by due date and status.
-4. Group by owner, due date, and urgency.
-5. Return the follow-up plan.
-
----
-
-## 10. Example prompts for users
-
-### Meeting questions
-
-- “Summarize the latest Marketing Weekly.”
-- “What was discussed in the last Management Team meeting?”
-- “Show me the decisions from the latest Product Leadership meeting.”
-- “Who attended the last Board meeting?”
-
-### Execution questions
-
-- “What are the open action items in Marketing?”
-- “What is overdue this week?”
-- “What changed in the execution plan?”
-- “What should we review in the next meeting?”
-
-### Decision questions
-
-- “What decisions are still proposed?”
-- “What did we decide about MCP positioning?”
-- “Who owns the decision on pricing?”
-
-### Automation requests
-
-- “Create an action item for Sami to draft the launch blog post.”
-- “Move the website analytics task to in progress.”
-- “Close the WhySummit feedback task.”
-- “Create a checklist from the latest meeting.”
-
----
-
-## 11. Error handling
-
-### Workspace not found
-
-Response pattern:
-
-> I could not find a workspace that matches that name. I found these close matches: Marketing, Management Team, Product Leadership. Which one should I use?
-
-### No meetings found
-
-Response pattern:
-
-> I found the workspace, but I do not see any meeting records in it yet.
-
-### Missing permissions
-
-Response pattern:
-
-> I cannot access that workspace or meeting with the current account. Check that the user has access in In Parallel.
-
-### Missing owner email
-
-Response pattern:
-
-> I can create the action item, but I need a valid owner email from the In Parallel tenant to assign it.
-
-### Ambiguous action item
-
-Response pattern:
-
-> I found more than one matching action item. Please choose which one to update.
-
----
-
-## 12. Security and privacy guidance
-
-### 12.1 Respect user permissions
-
-Never expose workspace, meeting, or action-item data outside the authenticated user’s permissions.
-
-### 12.2 Avoid unnecessary transcript access
-
-Transcripts may contain sensitive discussion. Prefer structured summaries unless exact wording is required.
-
-### 12.3 Avoid leaking private context into prompts
-
-If integrating with an LLM, send only the context needed to answer the user’s question.
-
-### 12.4 Log carefully
-
-Do not log full transcripts, confidential decisions, or sensitive action-item summaries unless there is a clear operational reason and the logs are protected.
-
-### 12.5 Validate write operations
-
-For create, update, or close actions, confirm the intended change before executing if the user’s instruction is ambiguous.
-
----
-
-## 13. Implementation checklist
-
-Before publishing the MCP publicly, verify:
-
-- [ ] Endpoint is reachable at `https://www.in-parallel.ai/mcp`.
-- [ ] Streamable HTTP transport works across target clients.
-- [ ] OAuth flow works for user-facing clients.
-- [ ] Bearer token flow works for programmatic clients.
-- [ ] Tool discovery returns stable names and schemas.
-- [ ] Workspace access is permission-scoped.
-- [ ] Meeting records are redacted or protected where needed.
-- [ ] Transcript access is appropriately permissioned.
-- [ ] Action-item write operations are auditable.
-- [ ] Errors are clear and safe.
-- [ ] Rate limits are documented.
-- [ ] Versioning strategy is documented.
-- [ ] Example client configurations are tested.
-
----
-
-## 14. Suggested public documentation structure
-
-Recommended pages for `www.in-parallel.ai/mcp`:
-
-1. **Overview**
-   - What the In Parallel MCP does
-   - Who it is for
-   - Example use cases
-
-2. **Quickstart**
-   - Connect from Cursor, Claude, VS Code, Cline, Windsurf, ChatGPT
-   - Authentication options
-   - First query
-
-3. **Tool Reference**
-   - Workspace tools
-   - Meeting tools
-   - Decision tools
-   - Action-item tools
-   - Execution-plan tools
-
-4. **Guides**
-   - Build a meeting-summary assistant
-   - Build an action-item follow-up agent
-   - Build a plan-review copilot
-   - Build a leadership briefing bot
-
-5. **Security**
-   - Auth
-   - Permissions
-   - Transcript handling
-   - Write operation safety
-
-6. **Changelog**
-   - Tool additions
-   - Schema updates
-   - Breaking changes
-
----
-
-## 15. Sample public quickstart
-
-### Step 1: Add the MCP server
-
-```json
-{
-  "mcpServers": {
-    "In Parallel MCP": {
-      "url": "https://www.in-parallel.ai/mcp"
-    }
-  }
-}
-```
-
-### Step 2: Authenticate
-
-Use OAuth if your client supports it. For server-side usage, provide a bearer token:
-
-```http
-Authorization: Bearer YOUR_IN_PARALLEL_API_KEY
-```
-
-### Step 3: Ask your first question
-
-Try:
-
-```text
-What workspaces can I access in In Parallel?
-```
-
-Then:
-
-```text
-Summarize the latest Marketing meeting and list open action items.
-```
-
-### Step 4: Build a workflow
-
-Example:
-
-```text
-Each Friday, summarize open action items in the Marketing workspace, group them by owner, and identify what needs attention before Monday.
-```
-
----
-
-## 16. Developer examples
-
-### 16.1 Workspace discovery
-
-```text
-User: What teams can I access?
-
-Agent:
-1. Calls list_workspaces.
-2. Returns workspace names grouped by category.
-3. Suggests common next actions.
-```
-
-### 16.2 Latest meeting summary
-
-```text
-User: What happened in the last Marketing meeting?
-
-Agent:
-1. Calls list_meeting_records for Marketing.
-2. Gets the newest meeting ID.
-3. Calls get_meeting_record.
-4. Summarizes discussion, decisions, and action items.
-```
-
-### 16.3 Action-item update
-
-```text
-User: Mark the Google Analytics task as in progress.
-
-Agent:
-1. Calls list_action_items for Marketing.
-2. Finds matching task.
-3. If match is clear, calls update_action_item with status="in_progress".
-4. Confirms the update.
-```
-
-### 16.4 Plan review
-
-```text
-User: What should we focus on in the next Marketing meeting?
-
-Agent:
-1. Gets the latest meeting record.
-2. Lists open action items.
-3. Retrieves the current execution plan.
-4. Returns agenda recommendations.
-```
-
----
-
-## 17. Versioning recommendations
-
-Use stable tool names and additive schema changes wherever possible.
-
-Recommended versioning pattern:
-
-- Keep the MCP endpoint stable: `/mcp`
-- Add tool fields without removing existing ones.
-- Deprecate fields before removal.
-- Document breaking changes in a changelog.
-- Consider including a `server_version` field in metadata or resource output.
-
----
-
-## 18. What to build first
-
-The best first developer-facing demos are:
-
-1. **Latest Meeting Briefing**
-   - Finds the latest meeting in a workspace.
-   - Summarizes decisions and action items.
-
-2. **Action Item Follow-up Agent**
-   - Lists assigned or overdue tasks.
-   - Groups by owner and due date.
-   - Updates statuses.
-
-3. **Execution Plan Copilot**
-   - Retrieves the current plan.
-   - Compares plan versions.
-   - Explains what changed.
-
-4. **Leadership Weekly Brief**
-   - Summarizes recent meetings, decisions, open risks, and overdue actions across selected workspaces.
-
----
-
-## 19. Positioning for developers
-
-Use this message:
-
-> In Parallel MCP lets developers build AI agents that understand real organizational context: meetings, decisions, action items, and execution plans.
-
-Short version:
-
-> Build AI assistants that understand what your team discussed, decided, and committed to.
-
-Developer value props:
-
-- No need to build custom meeting-context integrations.
-- Structured access to workspaces, meetings, decisions, actions, and plans.
-- Traceable context from meeting to task to plan.
-- Read and write workflows for execution follow-through.
-- Useful for internal copilots, leadership agents, sales assistants, and project execution bots.
-
-
----
-
-## References
-
-- Model Context Protocol transport specification: https://modelcontextprotocol.io/specification/2025-03-26/basic/transports
-- Model Context Protocol overview: https://modelcontextprotocol.io/
-Basically, you can simulate the API with notes too. 
-
+- **Remediation Drafter agent** — between Gate 2 and the Notifier; drafts action items with deadlines, owners, success criteria.
+- **Policy version tracking** — `version` and `last_updated` fields already exist in the schema; add a diff tool to detect regulation changes.
+- **Vector search** — replace keyword matching with embeddings when the company DB grows past ~100 documents.

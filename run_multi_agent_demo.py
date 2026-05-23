@@ -2,15 +2,14 @@
 
 Usage::
 
-    python run_multi_agent_demo.py
+    python run_multi_agent_demo.py                   # default: meeting-glow-001
+    python run_multi_agent_demo.py meeting-glow-002  # wider-coverage meeting
 
-The script:
-    1. Builds the LangGraph multi-agent graph.
-    2. Runs it until HITL Gate 1 (legal team confirms findings).
-    3. Asks the user [y/N] for each finding.
-    4. Resumes until HITL Gate 2 (legal team approves solutions).
-    5. Asks the user [a/e/r] for each proposed solution.
-    6. Resumes to the end and prints + saves the final report.
+Available meetings:
+    meeting-glow-001  — 7 decisions (claims, safety, GDPR, animal testing)
+    meeting-glow-002  — 10 decisions (GMP, restricted substances, labelling,
+                        consent, privacy-by-design, lawful basis, transparency,
+                        plus honesty and fairness claims)
 
 Requires ``ANTHROPIC_API_KEY`` to be set (in ``.env`` or environment).
 """
@@ -139,8 +138,9 @@ def main(meeting_id: str = DEFAULT_MEETING_ID) -> int:
 
 
 if __name__ == "__main__":
+    meeting = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_MEETING_ID
     try:
-        sys.exit(main())
+        sys.exit(main(meeting))
     except KeyboardInterrupt:
         print("\n[!] Interrupted by user.")
         sys.exit(130)
