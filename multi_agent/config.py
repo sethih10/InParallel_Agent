@@ -21,7 +21,7 @@ load_dotenv(_PROJECT_ROOT / ".env")
 # Model configuration                                                         #
 # --------------------------------------------------------------------------- #
 
-ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
 ANTHROPIC_API_KEY: str | None = os.getenv("ANTHROPIC_API_KEY")
 
 # Lower temperature for deterministic, audit-friendly compliance reasoning.
@@ -29,6 +29,9 @@ DEFAULT_TEMPERATURE: float = 0.0
 
 # Cap on ReAct loop iterations per agent node (safety net).
 MAX_AGENT_ITERATIONS: int = 12
+
+# Inner agent recursion limit.
+INNER_AGENT_RECURSION_LIMIT: int = 150
 
 
 # --------------------------------------------------------------------------- #
@@ -61,6 +64,7 @@ __all__ = [
     "ANTHROPIC_API_KEY",
     "DEFAULT_TEMPERATURE",
     "MAX_AGENT_ITERATIONS",
+    "INNER_AGENT_RECURSION_LIMIT",
     "PROJECT_ROOT",
     "REPORTS_DIR",
     "PROMPTS_DIR",
