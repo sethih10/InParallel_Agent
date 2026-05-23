@@ -9,12 +9,78 @@ organizations = [
     }
 ]
 
+# Company context: policies, data handling rules, and applicable regulations
+company_context = {
+    "company_name": "Acme Digital Solutions",
+    "jurisdiction": "EU / Finland",
+    "applicable_regulations": [
+        {
+            "name": "GDPR",
+            "full_name": "General Data Protection Regulation (EU) 2016/679",
+            "key_requirements": [
+                "Lawful basis for processing personal data",
+                "Data minimisation – collect only what is necessary",
+                "Purpose limitation – use data only for stated purposes",
+                "Data Protection Impact Assessment (DPIA) required for high-risk processing",
+                "Data subject rights: access, rectification, erasure, portability",
+                "72-hour breach notification to supervisory authority",
+                "International transfers require adequacy decisions or safeguards (SCCs, BCRs)",
+                "Special category data (health, biometrics) requires explicit consent or Art. 9 exemption",
+            ],
+        },
+        {
+            "name": "ePrivacy Directive",
+            "full_name": "Directive 2002/58/EC (ePrivacy)",
+            "key_requirements": [
+                "Consent required for cookies and tracking technologies",
+                "Confidentiality of electronic communications",
+            ],
+        },
+        {
+            "name": "Finnish Data Protection Act",
+            "full_name": "Tietosuojalaki (1050/2018)",
+            "key_requirements": [
+                "Supplements GDPR in Finland",
+                "National derogations for journalistic, academic, and statistical purposes",
+                "Office of the Data Protection Ombudsman is the supervisory authority",
+            ],
+        },
+    ],
+    "internal_policies": [
+        {
+            "name": "Data Classification Policy",
+            "summary": "All customer data must be classified as Public, Internal, Confidential, or Restricted before processing.",
+        },
+        {
+            "name": "Third-Party Data Sharing Policy",
+            "summary": "No customer data may be shared with third parties without a signed Data Processing Agreement (DPA) and legal review.",
+        },
+        {
+            "name": "Data Retention Policy",
+            "summary": "Personal data must not be retained longer than necessary. Default retention is 24 months unless a legal basis requires longer.",
+        },
+        {
+            "name": "Incident Response Policy",
+            "summary": "Any suspected data breach must be reported to the DPO within 24 hours. The DPO will assess notification obligations.",
+        },
+    ],
+    "contacts": {
+        "data_protection_officer": {"name": "Elena Korhonen", "email": "elena.korhonen@acme.fi"},
+        "legal_counsel": {"name": "Juha Mäkinen", "email": "juha.makinen@acme.fi"},
+        "ciso": {"name": "Timo Rantanen", "email": "timo.rantanen@acme.fi"},
+    },
+}
+
 meeting_records = [
     {
         "id": "meeting-001",
         "title": "Customer Onboarding and Data Sharing Review",
         "date": "2026-05-14",
         "duration_minutes": 90,
+        "initiated_by": {
+            "name": "Mikko Lehtinen",
+            "email": "mikko.lehtinen@acme.fi",
+        },
         "participants": [
             "Mikko Lehtinen",
             "Sofia Virtanen",

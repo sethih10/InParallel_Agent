@@ -1,7 +1,11 @@
 """MCP-style tool implementations for meeting compliance data."""
 
+import json
+from datetime import datetime
+
 from meeting_data import (
     action_items,
+    company_context,
     decisions,
     execution_plan,
     meeting_records,
@@ -9,6 +13,9 @@ from meeting_data import (
     plan_versions,
     transcripts,
 )
+
+# In-memory log of sent emails (for demo/testing purposes)
+sent_emails_log: list[dict] = []
 
 
 def list_meeting_records():
@@ -78,3 +85,49 @@ def get_plan_versions():
 def list_organizations():
     """List organisations associated with meetings."""
     return organizations
+
+
+def get_company_context():
+    """Get the company context including applicable regulations, internal policies, and key contacts."""
+    return company_context
+
+
+def get_meeting_initiator(meeting_id):
+    """Get the initiator (name and email) of a meeting by meeting ID."""
+    for record in meeting_records:
+        if record["id"] == meeting_id:
+            return record.get("initiated_by")
+    raise ValueError(f"Meeting record not found: {meeting_id}")
+
+
+def send_compliance_report_email(recipient_email, recipient_name, meeting_id, subject, body):
+    """Send a compliance report email to the specified recipient.
+
+    In production this would integrate with an SMTP server or email API.
+    For this demo it logs the email and returns a confirmation.
+    """
+    email_record = {
+        "id": f"email-{len(sent_emails_log) + 1:03d}",
+        "timestamp": datetime.now().isoformat(),
+        "to": recipient_email,
+        "to_name": recipient_name,
+        "meeting_id": meeting_id,
+        "subject": subject,
+        "body": body,
+    }
+    sent_emails_log.append(email_record)
+    print(f"\n{'='*60}")
+    print(f"EMAIL SENT (simulated)")
+    print(f"{'='*60}")
+    print(f"To:      {recipient_name} <{recipient_email}>")
+    print(f"Subject: {subject}")
+    print(f"Date:    {email_record['timestamp']}")
+    print(f"{'-'*60}")
+    print(body)
+    print(f"{'='*60}\n")
+    return {
+        "status": "sent",
+        "email_id": email_record["id"],
+        "to": recipient_email,
+        "subject": subject,
+    }
