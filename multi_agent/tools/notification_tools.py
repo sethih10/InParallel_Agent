@@ -3,22 +3,22 @@
 The agent uses these tools to:
 1. Identify which internal departments need to be notified
 2. Draft per-department messages and follow-up agendas
-3. Send notifications via MCP tools (Slack and email)
+3. Send notifications via MCP tools (Slack)
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import List
 
 from langchain_core.tools import tool
 
 from multi_agent.data import company_database as db
-from multi_agent.mcp.server import send_slack_message, send_email
+from multi_agent.mcp.server import send_slack_message
 
 
 @tool
-def list_departments() -> str: # InParallel has MCP tool named list_organizations
+def list_departments() -> str: # TODO: InParallel has MCP tool named list_organizations
     """Return the company department directory.
 
     Each entry includes the department id, name, lead, email, and the
@@ -31,7 +31,7 @@ def list_departments() -> str: # InParallel has MCP tool named list_organization
 
 
 @tool
-def find_departments_for_topics(topics: List[str]) -> str:
+def find_departments_for_topics(topics: List[str]) -> str: # TODO: unnecessary complexity for now?
     """Find the departments responsible for the given compliance topics.
 
     Args:
@@ -68,29 +68,13 @@ def send_slack_notification(
         channel = f"#{channel}"
 
     result = send_slack_message(channel, subject, message)
-    return json.dumps(result, indent=2)
-
-
-@tool
-def send_email_notification(
-    recipient: Optional[str],
-    subject: str,
-    message: str,
-) -> str:
-    """Send a notification email via MCP.
-
-    Use this to send compliance notifications via email. If recipient is
-    omitted, the default compliance team email is used.
-
-    Args:
-        recipient: Email address (optional; uses default if omitted)
-        subject: Email subject line
-        message: Email body (supports HTML and plain text)
-
-    Returns:
-        A JSON string with the result (success/failure).
-    """
-    result = send_email(recipient, subject, message)
+    
+    # Print result for visibility
+    if result.get("success"):
+        print(f"[SLACK OK] Sent to {channel}: {subject}")
+    else:
+        print(f"[SLACK ERROR] Failed to send to {channel}: {result.get('error', 'unknown error')}")
+    
     return json.dumps(result, indent=2)
 
 
@@ -98,7 +82,6 @@ NOTIFICATION_TOOLS = [
     list_departments,
     find_departments_for_topics,
     send_slack_notification,
-    send_email_notification,
 ]
 
 

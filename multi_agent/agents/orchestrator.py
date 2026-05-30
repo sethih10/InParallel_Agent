@@ -8,7 +8,12 @@ organizational and regulatory context. The orchestrator assesses:
   3. Decision types: which decisions require legal expertise
   4. Lawyer presence: was a lawyer present? should one have been?
 
-The orchestrator produces a meeting summary and assessment of compliance risks
+The orchestrator produces a meeting summary and assessment of compliance risks. 
+
+NOTE: This agent can be further extended to analyse who else should have been 
+in the meeting in a broader sense (not just legal/compliance, but also e.g. 
+finance, HR, tech lead...). Own workflows should be created for each use case. 
+For demo purposes, focus is specifically on legal/compliance.
 """
 
 from __future__ import annotations

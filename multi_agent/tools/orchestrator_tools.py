@@ -23,7 +23,7 @@ from multi_agent.data.decision_categorizer import (
 
 
 @tool
-def get_meeting_details(meeting_id: str) -> str:
+def get_meeting_details(meeting_id: str) -> str: # TODO: rename to get_meeting_record as per InParallel mcp naming conventions
     """Return high-level details about a meeting (without full decisions/transcript).
 
     Args:
@@ -50,7 +50,7 @@ def get_meeting_details(meeting_id: str) -> str:
 
 
 @tool
-def get_meeting_decisions(meeting_id: str) -> str:
+def get_meeting_decisions(meeting_id: str) -> str: # TODO: rename to list_decisions as per InParallel mcp naming conventions
     """Return all decisions made during the meeting.
 
     Args:

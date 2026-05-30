@@ -24,13 +24,26 @@ from langgraph.types import Command
 
 from multi_agent.graph import build_compliance_graph, new_thread_config
 from multi_agent.nodes import human_review
-from multi_agent.nodes.report_generator import (
-    format_report_text,
-    save_report_json,
-)
+from multi_agent.config import MCP_MODE, SLACK_BOT_TOKEN
 
 
 DEFAULT_MEETING_ID = "meeting-glow-001"
+
+
+def _check_slack_config() -> bool:
+    """Verify Slack is configured for real message sending."""
+    if MCP_MODE != "real":
+        print(f"[ERROR] MCP_MODE is '{MCP_MODE}' but must be 'real' to send Slack messages.")
+        print("        Set MCP_MODE=real in your .env file.")
+        return False
+    
+    if not SLACK_BOT_TOKEN:
+        print("[ERROR] SLACK_BOT_TOKEN is not set.")
+        print("        Set SLACK_BOT_TOKEN=xoxb-... in your .env file.")
+        return False
+    
+    print(f"[OK] Slack configured (MCP_MODE={MCP_MODE}, token present)")
+    return True
 
 
 def _get_state_values(graph, config) -> Dict[str, Any]:
@@ -78,6 +91,10 @@ def main(meeting_id: str = DEFAULT_MEETING_ID, company_id: str = "org-lumiere") 
     print(f"  Company: {company_id}")
     print(f"  Meeting under review: {meeting_id}")
     print()
+
+    # Verify Slack is configured before proceeding
+    if not _check_slack_config():
+        return 1
 
     graph = build_compliance_graph()
     config = new_thread_config()
@@ -139,19 +156,23 @@ def main(meeting_id: str = DEFAULT_MEETING_ID, company_id: str = "org-lumiere") 
         )
 
         # --- Resume to end (notifier + report_generator) ---------------
-        print("\n[*] Running Notification & Coordination agent...")
+        print("\n[*] Running Notification & Coordination agent (sending to Slack)...")
         graph.invoke(Command(resume=True), config=config)
 
-    # --- Final report ---------------------------------------------------
+    # --- Check Slack notifications were sent ----------------------------
     final_state = _get_state_values(graph, config)
-    report = final_state.get("final_report") or {}
-
-    print("\n")
-    print(format_report_text(report))
-
-    out_path = save_report_json(report)
-    print(f"\n[OK] JSON report saved to: {out_path}")
-
+    notifications = final_state.get("department_notifications") or []
+    meeting_agenda = final_state.get("meeting_agenda")
+    
+    # Count Slack sends (look at console output [SLACK OK] / [SLACK ERROR])
+    total_items = len(notifications) + (1 if meeting_agenda else 0)
+    
+    if total_items == 0:
+        print("\n[ERROR] No notifications or agenda were generated!")
+        return 1
+    
+    print(f"\n[OK] Notifier completed. {len(notifications)} notification(s) + agenda processed.")
+    print("     Check [SLACK OK] / [SLACK ERROR] messages above for Slack status.")
     return 0
 
 

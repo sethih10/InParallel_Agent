@@ -53,7 +53,7 @@ MCP_SERVER_PORT: int = int(os.getenv("MCP_SERVER_PORT", "3000"))
 DEFAULT_NOTIFICATION_EMAIL: str = os.getenv(
     "DEFAULT_NOTIFICATION_EMAIL", "compliance-team@demo.internal"
 )
-SLACK_WEBHOOK_URL: str | None = os.getenv("SLACK_WEBHOOK_URL")
+SLACK_BOT_TOKEN: str | None = os.getenv("SLACK_BOT_TOKEN")
 SMTP_HOST: str | None = os.getenv("SMTP_HOST")
 SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER: str | None = os.getenv("SMTP_USER")
@@ -89,7 +89,7 @@ __all__ = [
     "MCP_SERVER_HOST",
     "MCP_SERVER_PORT",
     "DEFAULT_NOTIFICATION_EMAIL",
-    "SLACK_WEBHOOK_URL",
+    "SLACK_BOT_TOKEN",
     "SMTP_HOST",
     "SMTP_PORT",
     "SMTP_USER",

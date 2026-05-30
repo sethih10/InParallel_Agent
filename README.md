@@ -44,6 +44,9 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env and set ANTHROPIC_API_KEY=...
 
+# Optional: enable real Slack notifications
+# set MCP_MODE=real and SLACK_BOT_TOKEN=xoxb-...
+
 # 3. Run the demo (default: meeting-glow-001, org-lumiere)
 python run_multi_agent_demo.py
 
