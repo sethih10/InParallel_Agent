@@ -1,13 +1,14 @@
 # Compliance Multi-Agent System
 
-A general-purpose hierarchical multi-agent system that reviews a meeting's decisions against applicable regulations, contextualizes them within the company's organizational and regulatory landscape, runs the legal team through a two-gate human-in-the-loop review, and produces an auditable compliance report with full evidence chain.
+A hierarchical multi-agent system that reviews meeting decisions against applicable regulations, contextualizes them within the company's organizational and regulatory landscape, runs the legal team through a two-gate human-in-the-loop review, and produces an auditable compliance report with full evidence chain.
 
 **General-purpose architecture**: While this demo focuses on cosmetics companies under EU regulations (Cosmetics Regulation EC 1223/2009, Claims Regulation EU 655/2013, GDPR), the system is designed to work with any regulated industry by plugging in company profiles, applicable regulations, and domain-specific policies.
 
 **Key features**:
-- **Orchestrator agent** — Assesses meeting context within company profile, determining legal necessity and regulatory relevance
-- **MCP-based notifications** — Sends compliance notifications via Slack and email using Model Context Protocol
-- **General architecture** — Company data, regulations, and industry specifics are pluggable inputs, not hardcoded
+- **Four specialized agents** — Orchestrator, Compliance Analyst, Legal Researcher, and Notifier
+- **Two human-in-the-loop gates** — Legal team confirms findings (Gate 1) and approves solutions (Gate 2)
+- **MCP-based notifications** — Sends compliance notifications via Slack using Model Context Protocol
+- **Pluggable architecture** — Company data, regulations, and industry specifics are configurable inputs
 
 Built with **LangGraph** + **Anthropic Claude Sonnet 4.5**.
 
@@ -21,14 +22,14 @@ Built with **LangGraph** + **Anthropic Claude Sonnet 4.5**.
 4. [System architecture](#4-system-architecture)
 5. [Folder structure](#5-folder-structure)
 6. [How data flows through the graph](#6-how-data-flows-through-the-graph)
-7. [The five agents](#7-the-five-agents)
+7. [The four agents](#7-the-four-agents)
 8. [Two human-in-the-loop gates](#8-two-human-in-the-loop-gates)
 9. [Evidence chain and severity scoring](#9-evidence-chain-and-severity-scoring)
 10. [Policy dictionaries](#10-policy-dictionaries)
-11. [Company database (fake)](#11-company-database-fake)
+11. [Company database](#11-company-database-fake)
 12. [Meeting scenarios](#12-meeting-scenarios)
 13. [Running and debugging](#13-running-and-debugging)
-14. [Extending to other industries](#14-extending-to-other-industries)
+14. [Extending the system](#14-extending-the-system)
 
 ---
 
@@ -173,30 +174,6 @@ The system is designed to be pluggable and reusable across industries. Key separ
                         └────────────────────────┘
 ```
 
----
-
-## 4. Folder structure
-                  ╔════════════════════════════════════╗
-                  ║  HITL GATE 2                       ║
-                  ║  legal team approves solutions     ║
-                  ╚════════════════┬═══════════════════╝
-                                   ▼
-                  ┌────────────────────────────────────┐
-                  │  notifier            (ReAct LLM)   │
-                  │  tools: list_departments,          │
-                  │         find_departments_for_topics│
-                  └────────────────┬───────────────────┘
-                                   ▼
-                  ┌────────────────────────────────────┐
-                  │  report_generator   (deterministic)│
-                  │  compiles JSON + text report       │
-                  └────────────────┬───────────────────┘
-                                   ▼
-                        ┌────────────────────────┐
-                        │        END             │
-                        └────────────────────────┘
-```
-
 ### Why this shape?
 
 - **Hierarchical, not flat** — each agent has a single, narrow responsibility. A flat ReAct agent with all 10 tools would get distracted; specialised agents stay focused.
@@ -206,14 +183,18 @@ The system is designed to be pluggable and reusable across industries. Key separ
 
 ---
 
-## 4. Folder structure
+## 5. Folder structure
 
 ```
-InParallel/
+InParallel_Agent/
 ├── README.md                       ← this file
 ├── requirements.txt
 ├── .env.example                    ← copy to .env, fill in API key
 ├── run_multi_agent_demo.py         ← interactive CLI entry point
+│
+├── examples/                       ← demonstration scripts
+│   ├── demo_company_profile.py
+│   └── demo_with_orchestrator.py
 │
 ├── multi_agent/                    ← main package
 │   ├── __init__.py                 ← public API: build_compliance_graph, ...
@@ -223,34 +204,42 @@ InParallel/
 │   ├── graph.py                    ← StateGraph wiring + interrupts + checkpointer
 │   │
 │   ├── agents/                     ← LLM-backed ReAct agents (one file each)
-│   │   ├── compliance_analyst.py
-│   │   ├── legal_researcher.py
-│   │   └── notifier.py
+│   │   ├── orchestrator.py         ← meeting context & legal assessment
+│   │   ├── compliance_analyst.py   ← identifies potential compliance issues
+│   │   ├── legal_researcher.py     ← researches remediation solutions
+│   │   └── notifier.py             ← sends notifications to departments
 │   │
 │   ├── nodes/                      ← deterministic graph nodes (no LLM)
 │   │   ├── human_review.py         ← HITL gate CLI prompts
 │   │   └── report_generator.py     ← final JSON + text compilation
 │   │
 │   ├── tools/                      ← agent tools, grouped by consumer
-│   │   ├── compliance_tools.py     ← 4 tools for the analyst
-│   │   ├── legal_tools.py          ← 4 tools for the researcher
-│   │   └── notification_tools.py   ← 2 tools for the notifier
+│   │   ├── orchestrator_tools.py   ← tools for the orchestrator
+│   │   ├── compliance_tools.py     ← tools for the analyst
+│   │   ├── legal_tools.py          ← tools for the researcher
+│   │   └── notification_tools.py   ← tools for the notifier
 │   │
 │   ├── prompts/                    ← system prompts as editable .md files
+│   │   ├── orchestrator.md
 │   │   ├── compliance_analyst.md
 │   │   ├── legal_researcher.md
 │   │   └── notifier.md
 │   │
-│   ├── policies/                   ← EU regulation dictionaries (24 articles)
-│   │   ├── eu_cosmetics.py         ← EC 1223/2009 (9 articles)
-│   │   ├── claims_regulation.py    ← EU 655/2013 (7 criteria)
-│   │   └── gdpr.py                 ← GDPR (8 articles)
+│   ├── policies/                   ← EU regulation dictionaries
+│   │   ├── eu_cosmetics.py         ← EC 1223/2009
+│   │   ├── claims_regulation.py    ← EU 655/2013
+│   │   └── gdpr.py                 ← GDPR
 │   │
-│   └── data/                       ← fake/seed data (swap for real DB)
-│       ├── meetings.py             ← 2 meeting fixtures, 17 decisions total
-│       └── company_database.py     ← past cases, policies, opinions, dept directory
+│   ├── mcp/                        ← Model Context Protocol integration
+│   │   └── server.py               ← Slack notification server
+│   │
+│   └── data/                       ← demo/seed data
+│       ├── meetings.py             ← meeting fixtures
+│       ├── company_context.py      ← company profiles
+│       ├── company_database.py     ← past cases, policies, dept directory
+│       └── decision_categorizer.py ← decision type classification
 │
-└── reports/                        ← generated JSON reports (gitignored)
+└── reports/                        ← generated JSON reports
     └── compliance_report.json
 ```
 
@@ -273,13 +262,13 @@ InParallel/
 1. This README
 2. `multi_agent/state.py` — what data flows
 3. `multi_agent/graph.py` — how nodes connect
-4. `multi_agent/agents/compliance_analyst.py` — example agent pattern
+4. `multi_agent/agents/orchestrator.py` — example agent pattern
 5. `multi_agent/policies/eu_cosmetics.py` — example policy dict
 6. `run_multi_agent_demo.py` — how it's invoked
 
 ---
 
-## 5. How data flows through the graph
+## 6. How data flows through the graph
 
 The single `ComplianceState` TypedDict is the contract between all nodes. Each node populates only the keys it owns.
 
@@ -289,6 +278,10 @@ class ComplianceState(TypedDict, total=False):
 
     # Input
     meeting_id: str                      # set by the caller
+    company_id: str                      # set by the caller
+
+    # Set by orchestrator
+    orchestrator_output: dict            # context assessment
 
     # Set by compliance_analyst
     potential_findings: list[dict]
@@ -318,9 +311,26 @@ A `MemorySaver` checkpointer is attached to the graph — this is what lets the 
 
 ---
 
-## 6. The three agents
+## 7. The four agents
 
-All three are LangGraph **ReAct agents** built with `langgraph.prebuilt.create_react_agent`. Each runs an inner Reason → Act → Observe loop until it emits its final structured JSON.
+All four are LangGraph **ReAct agents** built with `langgraph.prebuilt.create_react_agent`. Each runs an inner Reason → Act → Observe loop until it emits its final structured JSON.
+
+### Orchestrator
+
+**File:** `multi_agent/agents/orchestrator.py`  
+**Prompt:** `multi_agent/prompts/orchestrator.md`
+
+**Job:** Assess meeting context within the company's organizational and regulatory landscape. Determines whether a lawyer should have been present.
+
+**Tools:**
+| Tool | What it does |
+|---|---|
+| `get_meeting_details(meeting_id)` | Fetch meeting metadata and decisions |
+| `fetch_company_context(company_id)` | Load company profile and risk settings |
+| `assess_decision_types(decision_ids)` | Categorize decisions by type |
+| `get_lawyer_requirements(company_id)` | Get legal presence requirements |
+
+**Output:** JSON with legal assessment, risk evaluation, and recommendations.
 
 ### Compliance Analyst
 
@@ -377,7 +387,7 @@ All three are LangGraph **ReAct agents** built with `langgraph.prebuilt.create_r
 
 ---
 
-## 7. Two human-in-the-loop gates
+## 8. Two human-in-the-loop gates
 
 LangGraph's `interrupt_before=["legal_researcher", "notifier"]` pauses the graph **before** those nodes run. The CLI handler reads the pending state, prompts the user, injects the user's decisions via `graph.update_state(...)`, then resumes with `graph.invoke(Command(resume=True), ...)`.
 
@@ -404,7 +414,7 @@ Implementation: `multi_agent/nodes/human_review.py`.
 
 ---
 
-## 8. Evidence chain and severity scoring
+## 9. Evidence chain and severity scoring
 
 ### Evidence chain (enforced)
 
@@ -437,7 +447,7 @@ Each regulation article carries `severity` and `max_fine`. Findings inherit from
 
 ---
 
-## 9. Policy dictionaries
+## 10. Policy dictionaries
 
 24 regulation articles across three modules, all keyed by stable id:
 
@@ -467,7 +477,7 @@ Every article follows the same dict schema:
 
 ---
 
-## 10. Company database (fake)
+## 11. Company database (fake)
 
 `multi_agent/data/company_database.py` — four in-memory collections:
 
@@ -482,7 +492,7 @@ Search uses simple case-insensitive keyword matching. **Not vector RAG** — kee
 
 ---
 
-## 11. Meeting scenarios
+## 12. Meeting scenarios
 
 Two fake meetings in `multi_agent/data/meetings.py`:
 
@@ -523,7 +533,7 @@ python run_multi_agent_demo.py meeting-glow-002
 
 ---
 
-## 12. Running and debugging
+## 13. Running and debugging
 
 ### Normal run
 
@@ -582,7 +592,7 @@ Saved to `reports/compliance_report.json`:
 
 ---
 
-## 13. Extending the system
+## 14. Extending the system
 
 ### Add a new regulation article
 
