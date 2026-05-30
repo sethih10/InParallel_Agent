@@ -7,13 +7,12 @@ the transcript, and consult the EU regulation dictionaries.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from langchain_core.tools import tool
 
 from multi_agent.data import meetings
 from multi_agent.policies import (
-    ALL_REGULATIONS,
     get_regulation,
     list_regulations,
 )

@@ -10,7 +10,7 @@ The orchestrator agent uses these tools to:
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from langchain_core.tools import tool
 

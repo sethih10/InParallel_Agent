@@ -13,7 +13,6 @@ Example:
     python examples/demo_with_orchestrator.py meeting-glow-002 org-lumiere
 """
 
-import json
 import sys
 from pathlib import Path
 
