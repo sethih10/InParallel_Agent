@@ -20,7 +20,7 @@ from multi_agent.policies import (
 
 
 @tool
-def get_meeting_decisions(meeting_id: str) -> str:
+def get_meeting_decisions(meeting_id: str) -> str: # TODO: rename to list_decisions as per InParallel mcp naming conventions
     """Return all decisions made during the given meeting.
 
     Args:
@@ -34,7 +34,7 @@ def get_meeting_decisions(meeting_id: str) -> str:
 
 
 @tool
-def get_transcript_excerpt(meeting_id: str, speaker_or_keyword: str = "") -> str:
+def get_transcript_excerpt(meeting_id: str, speaker_or_keyword: str = "") -> str: # TODO: rename to get_transcript as per InParallel mcp naming conventions
     """Return the meeting transcript, optionally filtered.
 
     Args:

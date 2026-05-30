@@ -43,6 +43,23 @@ REPORTS_DIR: Path = PROJECT_ROOT / "reports"
 PROMPTS_DIR: Path = Path(__file__).resolve().parent / "prompts"
 
 
+# --------------------------------------------------------------------------- #
+# MCP (Model Context Protocol) configuration                                  #
+# --------------------------------------------------------------------------- #
+
+MCP_MODE: str = os.getenv("MCP_MODE", "mock")  # "mock" or "real"
+MCP_SERVER_HOST: str = os.getenv("MCP_SERVER_HOST", "localhost")
+MCP_SERVER_PORT: int = int(os.getenv("MCP_SERVER_PORT", "3000"))
+DEFAULT_NOTIFICATION_EMAIL: str = os.getenv(
+    "DEFAULT_NOTIFICATION_EMAIL", "compliance-team@demo.internal"
+)
+SLACK_WEBHOOK_URL: str | None = os.getenv("SLACK_WEBHOOK_URL")
+SMTP_HOST: str | None = os.getenv("SMTP_HOST")
+SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER: str | None = os.getenv("SMTP_USER")
+SMTP_PASSWORD: str | None = os.getenv("SMTP_PASSWORD")
+
+
 def ensure_reports_dir() -> Path:
     """Create the reports directory if it does not exist."""
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -68,6 +85,15 @@ __all__ = [
     "PROJECT_ROOT",
     "REPORTS_DIR",
     "PROMPTS_DIR",
+    "MCP_MODE",
+    "MCP_SERVER_HOST",
+    "MCP_SERVER_PORT",
+    "DEFAULT_NOTIFICATION_EMAIL",
+    "SLACK_WEBHOOK_URL",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_USER",
+    "SMTP_PASSWORD",
     "ensure_reports_dir",
     "require_api_key",
 ]

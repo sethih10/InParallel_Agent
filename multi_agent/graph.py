@@ -10,6 +10,9 @@ Graph topology::
     START
       |
       v
+    orchestrator         (LLM - context & legal assessment)
+      |
+      v
     compliance_analyst   (LLM)
       |
       v
@@ -50,6 +53,7 @@ from multi_agent.agents import (
     build_compliance_analyst,
     build_legal_researcher,
     build_notifier,
+    build_orchestrator,
 )
 from multi_agent.nodes.report_generator import report_generator_node
 from multi_agent.policies import get_regulation
@@ -114,6 +118,43 @@ def _last_message_content(agent_result: Dict[str, Any]) -> str:
         # Anthropic may return content as a list of blocks
         return "".join(b.get("text", "") for b in content if isinstance(b, dict))
     return content or ""
+
+
+# --------------------------------------------------------------------------- #
+# Node: Orchestrator                                                          #
+# --------------------------------------------------------------------------- #
+
+
+def orchestrator_node(state: ComplianceState) -> Dict[str, Any]:
+    """Run the Orchestrator agent to assess meeting context and legal presence.
+    
+    The orchestrator inspects the meeting within the company's organizational
+    and regulatory context, assessing whether a lawyer should have been present.
+    """
+    meeting_id = state.get("meeting_id")
+    company_id = state.get("company_id", "org-lumiere")  # default demo company
+    
+    if not meeting_id:
+        raise ValueError("orchestrator_node: meeting_id is required in state")
+
+    agent = build_orchestrator()
+    user_msg = HumanMessage(
+        content=(
+            f"Please assess meeting_id=\"{meeting_id}\" within company_id=\"{company_id}\". "
+            "Follow the workflow in your system prompt and return the JSON "
+            "object with all required fields as your final message."
+        )
+    )
+    result = agent.invoke(
+        {"messages": [user_msg]},
+        config={"recursion_limit": INNER_AGENT_RECURSION_LIMIT},
+    )
+    parsed = _extract_json(_last_message_content(result))
+
+    # Store the full orchestrator output in state
+    orchestrator_output = parsed if isinstance(parsed, dict) else {}
+    
+    return {"orchestrator_output": orchestrator_output}
 
 
 # --------------------------------------------------------------------------- #
@@ -326,12 +367,14 @@ def build_compliance_graph(checkpointer=None):
         checkpointer = MemorySaver()
 
     builder = StateGraph(ComplianceState)
+    builder.add_node("orchestrator", orchestrator_node)
     builder.add_node("compliance_analyst", compliance_analyst_node)
     builder.add_node("legal_researcher", legal_researcher_node)
     builder.add_node("notifier", notifier_node)
     builder.add_node("report_generator", report_generator_node)
 
-    builder.add_edge(START, "compliance_analyst")
+    builder.add_edge(START, "orchestrator")
+    builder.add_edge("orchestrator", "compliance_analyst")
     builder.add_edge("compliance_analyst", "legal_researcher")
     builder.add_edge("legal_researcher", "notifier")
     builder.add_edge("notifier", "report_generator")

@@ -5,13 +5,14 @@ state in one place (not scattered across closures) makes the dataflow
 explicit and easy to inspect.
 
 Fields are populated incrementally:
-    - ``meeting_id``           : set by caller
-    - ``potential_findings``   : after Compliance Analyst
-    - ``confirmed_findings``   : after HITL Gate 1
-    - ``proposed_solutions``   : after Legal Research agent
-    - ``approved_solutions``   : after HITL Gate 2
+    - ``meeting_id`` + ``company_id``          : set by caller
+    - ``orchestrator_output``                  : after Orchestrator
+    - ``potential_findings``                   : after Compliance Analyst
+    - ``confirmed_findings``                   : after HITL Gate 1
+    - ``proposed_solutions``                   : after Legal Research agent
+    - ``approved_solutions``                   : after HITL Gate 2
     - ``department_notifications`` + ``meeting_agenda`` : after Notifier
-    - ``final_report``         : after Report Generator
+    - ``final_report``                         : after Report Generator
 """
 
 from __future__ import annotations
@@ -31,10 +32,14 @@ class ComplianceState(TypedDict, total=False):
     # Conversation history (used by the LLM-based agent nodes).
     messages: Annotated[List[BaseMessage], add_messages]
 
-    # Input ------------------------------------------------------------
+    # Input ---------------------------------------------------------------
     meeting_id: str
+    company_id: str
 
-    # Compliance Analyst ----------------------------------------------
+    # Orchestrator --------------------------------------------------------
+    orchestrator_output: Dict[str, Any]    # full JSON output from orchestrator
+
+    # Compliance Analyst --------------------------------------------------
     potential_findings: List[Dict[str, Any]]    # list of Finding.to_dict()
 
     # HITL Gate 1 ------------------------------------------------------

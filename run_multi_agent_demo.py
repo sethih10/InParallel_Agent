@@ -71,10 +71,11 @@ def _run_gate_2(graph, config) -> List[Dict[str, Any]]:
     return approved
 
 
-def main(meeting_id: str = DEFAULT_MEETING_ID) -> int:
+def main(meeting_id: str = DEFAULT_MEETING_ID, company_id: str = "org-lumiere") -> int:
     print("=" * 78)
-    print("  Lumière Cosmetics - Compliance Multi-Agent Demo")
+    print("  Compliance Multi-Agent Demo")
     print("=" * 78)
+    print(f"  Company: {company_id}")
     print(f"  Meeting under review: {meeting_id}")
     print()
 
@@ -82,8 +83,25 @@ def main(meeting_id: str = DEFAULT_MEETING_ID) -> int:
     config = new_thread_config()
 
     # --- Run until first interrupt (before legal_researcher) -----------
-    print("[*] Running Compliance Analyst...")
-    graph.invoke({"meeting_id": meeting_id}, config=config)
+    print("[*] Running Orchestrator...")
+    graph.invoke({"meeting_id": meeting_id, "company_id": company_id}, config=config)
+    
+    # Show orchestrator output
+    state = _get_state_values(graph, config)
+    orchestrator_output = state.get("orchestrator_output", {})
+    if orchestrator_output:
+        print(f"\n[Orchestrator Assessment]")
+        print(f"  Meeting: {orchestrator_output.get('meeting_title', 'N/A')}")
+        lawyer_assessment = orchestrator_output.get("lawyer_assessment", {})
+        if lawyer_assessment:
+            was_present = lawyer_assessment.get("was_lawyer_present")
+            should_present = lawyer_assessment.get("should_lawyer_have_been_present")
+            print(f"  Lawyer present: {was_present}")
+            print(f"  Lawyer required: {should_present}")
+            if should_present and not was_present:
+                print(f"  ⚠️  WARNING: Legal personnel should have been present!")
+    
+    print("\n[*] Running Compliance Analyst...")
 
     # --- HITL Gate 1 ----------------------------------------------------
     confirmed_findings = _run_gate_1(graph, config)
@@ -139,8 +157,9 @@ def main(meeting_id: str = DEFAULT_MEETING_ID) -> int:
 
 if __name__ == "__main__":
     meeting = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_MEETING_ID
+    company = sys.argv[2] if len(sys.argv) > 2 else "org-lumiere"
     try:
-        sys.exit(main(meeting))
+        sys.exit(main(meeting, company))
     except KeyboardInterrupt:
         print("\n[!] Interrupted by user.")
         sys.exit(130)

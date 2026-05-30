@@ -1,6 +1,13 @@
 # Compliance Multi-Agent System
 
-A hierarchical multi-agent system that reviews a cosmetics company's meeting decisions against EU regulations (Cosmetics Regulation EC 1223/2009, Cosmetic Claims Regulation EU 655/2013, GDPR), runs the legal team through a two-gate human-in-the-loop review, and produces an auditable compliance report with full evidence chain.
+A general-purpose hierarchical multi-agent system that reviews a meeting's decisions against applicable regulations, contextualizes them within the company's organizational and regulatory landscape, runs the legal team through a two-gate human-in-the-loop review, and produces an auditable compliance report with full evidence chain.
+
+**General-purpose architecture**: While this demo focuses on cosmetics companies under EU regulations (Cosmetics Regulation EC 1223/2009, Claims Regulation EU 655/2013, GDPR), the system is designed to work with any regulated industry by plugging in company profiles, applicable regulations, and domain-specific policies.
+
+**Key features**:
+- **Orchestrator agent** — Assesses meeting context within company profile, determining legal necessity and regulatory relevance
+- **MCP-based notifications** — Sends compliance notifications via Slack and email using Model Context Protocol
+- **General architecture** — Company data, regulations, and industry specifics are pluggable inputs, not hardcoded
 
 Built with **LangGraph** + **Anthropic Claude Sonnet 4.5**.
 
@@ -10,17 +17,18 @@ Built with **LangGraph** + **Anthropic Claude Sonnet 4.5**.
 
 1. [Quick start](#1-quick-start)
 2. [What it does](#2-what-it-does)
-3. [Architecture](#3-architecture)
-4. [Folder structure](#4-folder-structure)
-5. [How data flows through the graph](#5-how-data-flows-through-the-graph)
-6. [The three agents](#6-the-three-agents)
-7. [Two human-in-the-loop gates](#7-two-human-in-the-loop-gates)
-8. [Evidence chain and severity scoring](#8-evidence-chain-and-severity-scoring)
-9. [Policy dictionaries](#9-policy-dictionaries)
-10. [Company database (fake)](#10-company-database-fake)
-11. [Meeting scenarios](#11-meeting-scenarios)
-12. [Running and debugging](#12-running-and-debugging)
-13. [Extending the system](#13-extending-the-system)
+3. [General-purpose architecture](#3-general-purpose-architecture)
+4. [System architecture](#4-system-architecture)
+5. [Folder structure](#5-folder-structure)
+6. [How data flows through the graph](#6-how-data-flows-through-the-graph)
+7. [The five agents](#7-the-five-agents)
+8. [Two human-in-the-loop gates](#8-two-human-in-the-loop-gates)
+9. [Evidence chain and severity scoring](#9-evidence-chain-and-severity-scoring)
+10. [Policy dictionaries](#10-policy-dictionaries)
+11. [Company database (fake)](#11-company-database-fake)
+12. [Meeting scenarios](#12-meeting-scenarios)
+13. [Running and debugging](#13-running-and-debugging)
+14. [Extending to other industries](#14-extending-to-other-industries)
 
 ---
 
@@ -36,13 +44,16 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env and set ANTHROPIC_API_KEY=...
 
-# 3. Run the demo (default: meeting-glow-001)
+# 3. Run the demo (default: meeting-glow-001, org-lumiere)
 python run_multi_agent_demo.py
 
-# Or pick the wider-coverage meeting
-python run_multi_agent_demo.py meeting-glow-002
+# Or run with a specific meeting and company
+python run_multi_agent_demo.py meeting-glow-002 org-lumiere
 
-# Verbose diagnostics (prints what each agent returned)
+# Run the orchestrator demonstration script
+python examples/demo_with_orchestrator.py meeting-glow-001 org-lumiere
+
+# Verbose diagnostics
 COMPLIANCE_DEBUG=1 python run_multi_agent_demo.py meeting-glow-002
 ```
 
@@ -57,26 +68,64 @@ The final report is printed to the terminal and saved to `reports/compliance_rep
 
 ## 2. What it does
 
-You hand it a meeting id. The system:
+You hand it a meeting ID and company ID. The system:
 
-1. **Inspects the meeting** for decisions that violate EU regulations.
-2. **Pauses** so the legal team can confirm which findings are real legal issues.
-3. **Researches** each confirmed issue against the company's historical knowledge base (past cases, internal policies, external legal opinions) to draft remediation proposals backed by precedent.
-4. **Pauses again** so the legal team can approve, edit, or reject each proposed solution.
-5. **Identifies** which internal departments need to be notified, drafts a notification message for each, and a cross-functional follow-up meeting agenda.
-6. **Compiles** a final structured report — JSON for machine consumption, plain text for humans — sorted by severity with full evidence chain.
+1. **Orchestrates context** — Assesses the meeting within the company's industry, risk profile, and applicable regulations. Determines if legal personnel should have been present.
+2. **Inspects compliance** — Identifies decisions that may violate applicable regulations.
+3. **Pauses** (HITL Gate 1) — Legal team confirms which findings are real legal issues.
+4. **Researches** — For each confirmed issue, searches company knowledge base (past cases, policies, legal opinions) to draft remediation proposals.
+5. **Pauses** (HITL Gate 2) — Legal team approves, edits, or rejects each proposed solution.
+6. **Notifies** — Identifies which internal departments need to be notified, drafts messages (optionally sends via Slack/email), and drafts a cross-functional follow-up meeting agenda.
+7. **Reports** — Compiles a final structured report (JSON + plain text), sorted by severity with full evidence chain.
 
 The legal team makes legal judgments. The agents do the research and drafting.
 
 ---
 
-## 3. Architecture
+## 3. General-purpose architecture
+
+The system is designed to be pluggable and reusable across industries. Key separation points:
+
+### Company Context (Pluggable)
+- **Location**: `multi_agent/data/company_context.py`
+- **Purpose**: Company profile (industry, risk level, applicable regulations, personnel roles)
+- **In demo**: Hardcoded profiles for Lumière Cosmetics and Pharma Demo
+- **In production**: Load from database, API, or configuration system
+
+### Regulations & Policies (Pluggable)
+- **Location**: `multi_agent/policies/` — Generic policy loading
+- **Demo policies**: `multi_agent/policies/eu_cosmetics.py`, `claims_regulation.py`, `gdpr.py`
+- **In production**: Register new policy modules for different industries/regulations
+
+### Agent Prompts (Customizable)
+- **Location**: `multi_agent/prompts/*.md` — Plain-text Markdown, easy for SMEs to edit
+- **Compliance Analyst**: Generalized to all industries
+- **Orchestrator**: Generic meeting context assessment (customizable for industry risk profiles)
+- **Legal Researcher**: Works with any regulations
+- **Notifier**: Generic department routing and notification
+
+### Demo vs. Production
+- **Demo data**: Meeting fixtures, company profiles, past cases, internal policies in `examples/` and `multi_agent/data/`
+- **MCP notifications**: In demo mode, logs instead of sending (see `MCP_MODE` in config)
+- **Company selection**: Pass `company_id` to `run_multi_agent_demo.py` to use different company contexts
+
+---
+
+## 4. System architecture
 
 ```
                         ┌────────────────────────┐
                         │       START            │
                         └───────────┬────────────┘
                                     ▼
+                  ┌────────────────────────────────────┐
+                  │  orchestrator         (ReAct LLM)  │
+                  │  tools: get_meeting_details,       │
+                  │         fetch_company_context,     │
+                  │         assess_decision_types,     │
+                  │         get_lawyer_requirements    │
+                  └────────────────┬───────────────────┘
+                                   ▼
                   ┌────────────────────────────────────┐
                   │  compliance_analyst   (ReAct LLM)  │
                   │  tools: get_meeting_decisions,     │
@@ -98,6 +147,32 @@ The legal team makes legal judgments. The agents do the research and drafting.
                   │         get_document_by_id         │
                   └────────────────┬───────────────────┘
                                    ▼
+                  ╔════════════════════════════════════╗
+                  ║  HITL GATE 2                       ║
+                  ║  legal team approves solutions     ║
+                  ╚════════════════┬═══════════════════╝
+                                   ▼
+                  ┌────────────────────────────────────┐
+                  │  notifier             (ReAct LLM)  │
+                  │  tools: list_departments,          │
+                  │         find_departments_for_topics│
+                  │         send_slack_notification,   │
+                  │         send_email_notification    │
+                  │  (uses MCP for Slack/email)        │
+                  └────────────────┬───────────────────┘
+                                   ▼
+                  ┌────────────────────────────────────┐
+                  │  report_generator  (deterministic) │
+                  └────────────────┬───────────────────┘
+                                   ▼
+                        ┌────────────────────────┐
+                        │       END              │
+                        └────────────────────────┘
+```
+
+---
+
+## 4. Folder structure
                   ╔════════════════════════════════════╗
                   ║  HITL GATE 2                       ║
                   ║  legal team approves solutions     ║
