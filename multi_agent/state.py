@@ -48,6 +48,14 @@ class ComplianceState(TypedDict, total=False):
     approved_solutions: List[Dict[str, Any]]
     gate2_complete: bool
 
+    # Retry loop -------------------------------------------------------
+    retry_count: int                            # Gate 2 rejection iterations so far
+    rejection_feedback: List[Dict[str, Any]]    # [{finding_id, feedback_text}]
+    escalated: bool                             # True when max retries exceeded
+
+    # Early-warning email ----------------------------------------------
+    early_warning_sent: bool
+
     # Notifier --------------------------------------------------------
     department_notifications: List[Dict[str, Any]]
     meeting_agenda: Optional[Dict[str, Any]]

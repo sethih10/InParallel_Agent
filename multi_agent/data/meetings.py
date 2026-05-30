@@ -56,6 +56,10 @@ MEETING_RECORDS: List[Dict[str, Any]] = [
             "decision-glow-006",
             "decision-glow-007",
         ],
+        "initiated_by": {
+            "name": "Petri Halonen",
+            "email": "petri.halonen@lumiere.example",
+        },
     },
     {
         "id": "meeting-glow-002",
@@ -93,6 +97,10 @@ MEETING_RECORDS: List[Dict[str, Any]] = [
             "decision-glow-109",
             "decision-glow-110",
         ],
+        "initiated_by": {
+            "name": "Henrik Aalto",
+            "email": "henrik.aalto@lumiere.example",
+        },
     },
 ]
 
@@ -567,6 +575,14 @@ def get_decision(decision_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def get_meeting_initiator(meeting_id: str) -> Optional[Dict[str, str]]:
+    """Return the initiator (name and email) of a meeting, or None."""
+    meeting = get_meeting(meeting_id)
+    if meeting is None:
+        return None
+    return meeting.get("initiated_by")
+
+
 __all__ = [
     "COMPANY",
     "MEETING_RECORDS",
@@ -576,4 +592,5 @@ __all__ = [
     "get_transcript",
     "list_decisions",
     "get_decision",
+    "get_meeting_initiator",
 ]

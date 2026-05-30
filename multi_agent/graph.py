@@ -10,25 +10,32 @@ Graph topology::
     START
       |
       v
-    compliance_analyst   (LLM)
+    compliance_analyst      (LLM)
       |
       v
-    [interrupt_before]   (HITL Gate 1: legal team confirms findings)
+    [interrupt_before]      (HITL Gate 1: legal team confirms findings)
       |
       v
-    legal_researcher     (LLM)
+    early_warning_email     (deterministic — emails meeting organiser)
       |
       v
-    [interrupt_before]   (HITL Gate 2: legal team approves solutions)
+    legal_researcher        (LLM)
       |
       v
-    notifier             (LLM)
+    [interrupt_before]      (HITL Gate 2: legal team approves solutions)
       |
       v
-    report_generator     (deterministic)
+    gate2_router            (conditional — retry or proceed)
       |
-      v
-    END
+      +-- retries left --> legal_researcher  (loop back)
+      |
+      +-- done ----------> notifier          (LLM)
+                              |
+                              v
+                            report_generator (deterministic)
+                              |
+                              v
+                            END
 
 A ``MemorySaver`` checkpointer is required because the graph uses
 ``interrupt_before`` — the checkpointer is what lets the graph pause and
@@ -51,6 +58,7 @@ from multi_agent.agents import (
     build_legal_researcher,
     build_notifier,
 )
+from multi_agent.data.meetings import get_meeting, get_meeting_initiator
 from multi_agent.nodes.report_generator import report_generator_node
 from multi_agent.policies import get_regulation
 
@@ -177,6 +185,57 @@ def compliance_analyst_node(state: ComplianceState) -> Dict[str, Any]:
             enriched.append(f)
 
     return {"potential_findings": enriched}
+
+
+# --------------------------------------------------------------------------- #
+# Node: Early-Warning Email (deterministic)                                   #
+# --------------------------------------------------------------------------- #
+
+MAX_RETRIES = 2
+
+
+def early_warning_email_node(state: ComplianceState) -> Dict[str, Any]:
+    """Send an early-warning email to the meeting organiser after Gate 1."""
+    meeting_id = state.get("meeting_id", "")
+    confirmed = state.get("confirmed_findings") or []
+    if not confirmed:
+        return {"early_warning_sent": False}
+
+    initiator = get_meeting_initiator(meeting_id)
+    meeting = get_meeting(meeting_id)
+    meeting_title = meeting["title"] if meeting else meeting_id
+
+    if not initiator:
+        print(f"\n[!] No initiator found for {meeting_id} — skipping early-warning email.")
+        return {"early_warning_sent": False}
+
+    finding_summaries = "\n".join(
+        f"  - [{f.get('severity', '?')}] {f.get('summary', '')}"
+        for f in confirmed
+    )
+
+    subject = f"Compliance issues identified — {meeting_title}"
+    body = (
+        f"Dear {initiator['name']},\n\n"
+        f"The compliance review of \"{meeting_title}\" has identified "
+        f"{len(confirmed)} issue(s) that require legal attention:\n\n"
+        f"{finding_summaries}\n\n"
+        "The legal team is now researching remediation proposals. "
+        "Please wait for a follow-up with the detailed findings and "
+        "next steps.\n\n"
+        "— Compliance Review System"
+    )
+
+    print(f"\n{'=' * 60}")
+    print("EARLY-WARNING EMAIL SENT (simulated)")
+    print(f"{'=' * 60}")
+    print(f"To:      {initiator['name']} <{initiator['email']}>")
+    print(f"Subject: {subject}")
+    print(f"{'-' * 60}")
+    print(body)
+    print(f"{'=' * 60}\n")
+
+    return {"early_warning_sent": True}
 
 
 # --------------------------------------------------------------------------- #
