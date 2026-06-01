@@ -61,10 +61,11 @@ You hand it a meeting id. The system:
 
 1. **Inspects the meeting** for decisions that violate EU regulations.
 2. **Pauses** so the legal team can confirm which findings are real legal issues.
-3. **Researches** each confirmed issue against the company's historical knowledge base (past cases, internal policies, external legal opinions) to draft remediation proposals backed by precedent.
+3. **In parallel** — once findings are confirmed:
+   - The **Notifier** immediately alerts each affected department and proposes a cross-functional meeting between them and the legal team.
+   - The **Legal Researcher** searches the company knowledge base (past cases, internal policies, external legal opinions) and drafts remediation proposals backed by precedent.
 4. **Pauses again** so the legal team can approve, edit, or reject each proposed solution.
-5. **Identifies** which internal departments need to be notified, drafts a notification message for each, and a cross-functional follow-up meeting agenda.
-6. **Compiles** a final structured report — JSON for machine consumption, plain text for humans — sorted by severity with full evidence chain.
+5. **Compiles** a final structured report — JSON for machine consumption, plain text for humans — sorted by severity with full evidence chain.
 
 The legal team makes legal judgments. The agents do the research and drafting.
 
@@ -88,26 +89,32 @@ The legal team makes legal judgments. The agents do the research and drafting.
                   ╔════════════════════════════════════╗
                   ║  HITL GATE 1                       ║
                   ║  legal team confirms findings      ║
-                  ╚════════════════┬═══════════════════╝
+                  ╚════════════════╤═══════════════════╝
                                    ▼
                   ┌────────────────────────────────────┐
-                  │  legal_researcher    (ReAct LLM)   │
-                  │  tools: search_past_cases,         │
-                  │         search_internal_policies,  │
-                  │         search_legal_opinions,     │
-                  │         get_document_by_id         │
-                  └────────────────┬───────────────────┘
-                                   ▼
+                  │  fan_out            (deterministic) │
+                  └────────┬──────────────────┬─────────┘
+                           ▼                  ▼
+           ┌───────────────────┐  ┌───────────────────────┐
+           │ notifier          │  │ legal_researcher       │
+           │ (ReAct LLM)       │  │ (ReAct LLM)            │
+           │ tools:            │  │ tools:                 │
+           │  list_departments │  │  search_past_cases     │
+           │  find_depts_for   │  │  search_internal_      │
+           │   _topics         │  │   policies             │
+           │                   │  │  search_legal_opinions │
+           │                   │  │  get_document_by_id    │
+           └────────┬──────────┘  └──────────┬────────────┘
+                    └──────────┬─────────────┘
+                               ▼
+                  ┌────────────────────────────────────┐
+                  │  fan_in             (deterministic) │
+                  └────────────────────┬───────────────┘
+                                       ▼
                   ╔════════════════════════════════════╗
                   ║  HITL GATE 2                       ║
                   ║  legal team approves solutions     ║
-                  ╚════════════════┬═══════════════════╝
-                                   ▼
-                  ┌────────────────────────────────────┐
-                  │  notifier            (ReAct LLM)   │
-                  │  tools: list_departments,          │
-                  │         find_departments_for_topics│
-                  └────────────────┬───────────────────┘
+                  ╚════════════════╤═══════════════════╝
                                    ▼
                   ┌────────────────────────────────────┐
                   │  report_generator   (deterministic)│
@@ -122,7 +129,8 @@ The legal team makes legal judgments. The agents do the research and drafting.
 ### Why this shape?
 
 - **Hierarchical, not flat** — each agent has a single, narrow responsibility. A flat ReAct agent with all 10 tools would get distracted; specialised agents stay focused.
-- **Two HITL gates, not one** — legal judgement happens at two distinct points: *"is this actually a legal issue?"* and *"is this proposed solution acceptable?"*. Bundling them is impossible because the second question depends on research that hasn't happened yet at the first gate.
+- **Parallel notification + research** — once Gate 1 confirms findings, there is no reason to wait for the researcher before alerting departments. `fan_out` fires both branches simultaneously; `fan_in` joins them before Gate 2. This cuts wall-clock time and ensures departments get notified at the earliest possible moment.
+- **Two HITL gates, not one** — legal judgement happens at two distinct points: *"is this actually a legal issue?"* (Gate 1, before the parallel phase) and *"is this proposed solution acceptable?"* (Gate 2, after both parallel branches complete). Bundling them is impossible because the second question depends on research that hasn't happened yet at the first gate.
 - **Autonomous tool-using legal research, not RAG** — pulling one set of similar documents isn't enough. The legal researcher genuinely does multi-step reasoning: search past cases → cross-reference with internal policies → check what external counsel said. That's a tool-using agent, not a one-shot retrieval.
 - **Deterministic report generator** — the final compilation step is plain Python. No LLM is needed to assemble structured output from already-structured pieces; an LLM there would only add hallucination risk.
 
@@ -301,9 +309,9 @@ All three are LangGraph **ReAct agents** built with `langgraph.prebuilt.create_r
 
 ## 7. Two human-in-the-loop gates
 
-LangGraph's `interrupt_before=["legal_researcher", "notifier"]` pauses the graph **before** those nodes run. The CLI handler reads the pending state, prompts the user, injects the user's decisions via `graph.update_state(...)`, then resumes with `graph.invoke(Command(resume=True), ...)`.
+LangGraph's `interrupt_before=["fan_out", "fan_in"]` pauses the graph **before** those nodes run. The CLI handler reads the pending state, prompts the user, injects the user's decisions via `graph.update_state(...)`, then resumes with `graph.invoke(Command(resume=True), ...)`.
 
-### Gate 1 — Confirm findings
+### Gate 1 — Confirm findings (before `fan_out`)
 
 For each potential finding (sorted Critical → Low), the user sees:
 - the verbatim transcript quote and speaker
@@ -313,9 +321,13 @@ For each potential finding (sorted Critical → Low), the user sees:
 
 …and answers `[y/N]`. Only confirmed findings flow downstream.
 
-### Gate 2 — Approve solutions
+Once the user resumes, `fan_out` fires both parallel branches simultaneously:
+- **Branch A (notifier)** — immediately alerts each affected department and proposes a cross-functional meeting.
+- **Branch B (legal_researcher)** — searches the company knowledge base and drafts remediation solutions.
 
-For each proposed solution, the user sees:
+### Gate 2 — Approve solutions (before `fan_in` → `report_generator`)
+
+Both parallel branches must finish before Gate 2 fires. At this point the legal team has already received their notifications. The user sees each proposed solution:
 - the proposal text
 - the cited company-database document ids (evidence)
 - the rationale

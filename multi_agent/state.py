@@ -8,9 +8,9 @@ Fields are populated incrementally:
     - ``meeting_id``           : set by caller
     - ``potential_findings``   : after Compliance Analyst
     - ``confirmed_findings``   : after HITL Gate 1
-    - ``proposed_solutions``   : after Legal Research agent
+    - ``department_notifications`` + ``meeting_agenda`` : after Notifier  (parallel branch A)
+    - ``proposed_solutions``   : after Legal Research agent               (parallel branch B)
     - ``approved_solutions``   : after HITL Gate 2
-    - ``department_notifications`` + ``meeting_agenda`` : after Notifier
     - ``final_report``         : after Report Generator
 """
 
